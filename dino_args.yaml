@@ -1,0 +1,21 @@
+---
+# DINO ARGS
+# model
+arch: "vit_tiny"
+checkpoint_path: "/mnt/cluster/data_hdd/jazibmodels/dino_vit-t_32_500k_randonly/epoch=1-step=100000.ckpt"
+checkpoint_key: "teacher"
+patch_size: 16
+num_classes: 10
+linear_eval: False
+# data
+data_path: "/home/jazib/projects/data/gartow_class_fixed/"
+input_size: 96
+# lightning
+lr: 0.00001
+batch_size: 32
+num_workers: 8
+# training
+output_dir: "./test/"
+max_epochs: 150
+resume: False
+resume_ckpt: null
