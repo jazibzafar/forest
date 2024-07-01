@@ -9,6 +9,7 @@ from src.nnblocks import LinearClassifier
 from src.transforms import ClassificationTransform, CenterCrop
 from torchvision.datasets import ImageFolder
 from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.loggers import TensorBoardLogger
 from src.checkpoints import load_dino_checkpoint, prepare_arch
 from src.data import img_loader
@@ -78,6 +79,15 @@ class LitClass(L.LightningModule):
         output = self.model(samples)
         loss = self.loss(output, targets)
         acc1, _ = accuracy(output, targets, topk=(1, 5))
+        self.log('val/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
+        self.log('val/acc', acc1, prog_bar=True, on_step=False, on_epoch=True)
+
+    def test_step(self, batch, batch_idx):
+        samples = batch[0]
+        targets = batch[1]
+        output = self.model(samples)
+        loss = self.loss(output, targets)
+        acc1, _ = accuracy(output, targets, topk=(1, 5))
         self.log('test/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
         self.log('test/acc', acc1, prog_bar=True, on_step=False, on_epoch=True)
 
@@ -94,18 +104,19 @@ def train_classification(args):
     train_transform = ClassificationTransform(args.input_size)
     train_path = os.path.join(args.data_path, "train")
     train_dataset = ImageFolder(root=train_path, transform=train_transform, loader=img_loader)
-    test_transform = CenterCrop(args.input_size)
-    test_path = os.path.join(args.data_path, "test")
-    test_dataset = ImageFolder(root=test_path, transform=test_transform, loader=img_loader)
+    val_transform = CenterCrop(args.input_size)
+    val_path = os.path.join(args.data_path, "val")
+    val_dataset = ImageFolder(root=val_path, transform=val_transform, loader=img_loader)
 
     # lightning class
-    light_class = LitClass(model, train_dataset, test_dataset, args)
+    light_class = LitClass(model, train_dataset, val_dataset, args)
 
     # logger and callbacks
     checkpoint_callback = ModelCheckpoint(dirpath=args.output_dir,
                                           every_n_epochs=int(args.max_epochs / 3),
                                           # every_n_train_steps=int(args.max_steps / 5),
                                           save_last=True)
+    earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min')
     logger = TensorBoardLogger(save_dir=args.output_dir,
                                name="",
                                default_hp_metric=False)
@@ -117,8 +128,8 @@ def train_classification(args):
                         enable_progress_bar=True,
                         logger=logger,
                         log_every_n_steps=10,
-                        check_val_every_n_epoch=10,
-                        callbacks=[checkpoint_callback])
+                        # check_val_every_n_epoch=10,
+                        callbacks=[checkpoint_callback, earlystopping_callback])
 
     # begin training
     print("beginning the training.")
@@ -129,4 +140,18 @@ def train_classification(args):
         trainer.fit(model=light_class)
     end = time.time()
     print(f"training completed. Elapsed time {end - start} seconds.")
+
+    # begin testing
+    test_transform = CenterCrop(args.input_size)
+    test_path = os.path.join(args.data_path, "test")
+    test_dataset = ImageFolder(root=test_path, transform=test_transform, loader=img_loader)
+    test_sampler = SequentialSampler(test_dataset)
+    test_loader = DataLoader(dataset=test_dataset,
+                             sampler=test_sampler,
+                             batch_size=args.batch_size,
+                             num_workers=args.num_workers,
+                             persistent_workers=True,
+                             pin_memory=True,
+                             drop_last=False, )
+    trainer.test(model=light_class, dataloaders=test_loader)
 
