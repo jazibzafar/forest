@@ -272,6 +272,16 @@ class VisionTransformer(nn.Module):
                 output.append(self.norm(x))
         return output
 
+    def forward_with_layer_extraction(self, x, extract_layers=()):
+        x = self.prepare_tokens(x)
+        layers_to_extract = []
+        for i, blk in enumerate(self.blocks):
+            x = blk(x)
+            if i in extract_layers:
+                layers_to_extract += [x.permute(1, 0, 2)]
+        x = self.norm(x)
+        return x, layers_to_extract
+
 
 def vit_tiny(patch_size=16, **kwargs):
     model = VisionTransformer(
