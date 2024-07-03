@@ -30,7 +30,7 @@ class LitSeg(L.LightningModule):
         self.val_sampler = SequentialSampler(self.val_dataset)
 
         self.lr = args.lr
-        self.loss = nn.MSELoss()
+        self.loss = nn.BCEWithLogitsLoss()
         self.mIoU = JaccardIndex(task="binary")
 
         # other things
@@ -60,6 +60,7 @@ class LitSeg(L.LightningModule):
                           num_workers=self.num_workers,
                           batch_size=self.batch_size,
                           pin_memory=True,
+                          shuffle=True,
                           drop_last=True, )
 
     def val_dataloader(self):
@@ -99,7 +100,8 @@ def train_segmentation(args):
     model = ClipSegStyleDecoder(backbone=model_backbone,
                                 patch_size=args.patch_size,
                                 reduce_dim=args.reduce_dim,
-                                n_heads=args.n_heads)
+                                n_heads=args.n_heads,
+                                complex_trans_conv=args.complex_trans_conv)
 
     # build the dataset
     train_path = os.path.join(args.data_path, 'train/')

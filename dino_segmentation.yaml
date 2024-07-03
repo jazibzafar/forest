@@ -11,12 +11,13 @@ crop_size: 224
 # segmentation specific
 reduce_dim: 112
 n_heads: 4
+complex_trans_conv: True
 # lightning
-lr: 0.00001
+lr: 0.001
 batch_size: 32
 num_workers: 8
 # training
-output_dir: "./test/"
-max_epochs: 100
+output_dir: "./test2/"
+max_epochs: 150
 resume: False
 resume_ckpt: null

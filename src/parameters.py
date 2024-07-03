@@ -35,6 +35,7 @@ class SegmentationParameters:
     data_path: str = "/path/to/data/"
     crop_size: int = 224
     # segmentation specific
+    complex_trans_conv: bool = True
     reduce_dim: int = 112
     n_heads: int = 4
     # lightning
