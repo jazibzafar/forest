@@ -1,0 +1,22 @@
+---
+# DINO ARGS
+# model
+arch: "vit_tiny"
+checkpoint_path: "/home/jazib/projects/savedmodels/dino_vit_tiny_r_500k.ckpt"
+checkpoint_key: "teacher"
+patch_size: 16
+# data
+data_path: "/home/jazib/projects/data/gartow_seg/single_class_sliced/8020/"
+crop_size: 224
+# segmentation specific
+reduce_dim: 112
+n_heads: 4
+# lightning
+lr: 0.00001
+batch_size: 32
+num_workers: 8
+# training
+output_dir: "./test/"
+max_epochs: 100
+resume: False
+resume_ckpt: null

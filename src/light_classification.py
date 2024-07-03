@@ -6,13 +6,13 @@ from src.metrics import accuracy
 import os
 import time
 from src.nnblocks import LinearClassifier
-from src.transforms import ClassificationTransform, CenterCrop
+from src.data_and_transforms import ClassificationTransform, CenterCrop
 from torchvision.datasets import ImageFolder
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.loggers import TensorBoardLogger
 from src.checkpoints import load_dino_checkpoint, prepare_arch
-from src.data import img_loader
+from src.data_and_transforms import img_loader
 
 
 class LitClass(L.LightningModule):

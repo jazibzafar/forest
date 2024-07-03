@@ -1,6 +1,6 @@
 import yaml
 import argparse
-from src.parameters import ClassificationParameters
+from src.parameters import ClassificationParameters, SegmentationParameters
 
 
 def yaml_to_dict_parser(file):
@@ -12,6 +12,12 @@ def yaml_to_dict_parser(file):
 def yaml_to_dataclass_parser(file):
     arg_dict = yaml_to_dict_parser(file)
     arg_dataclass = ClassificationParameters(**arg_dict)
+    return arg_dataclass
+
+
+def yaml_to_dataclass_parser_seg(file):
+    arg_dict = yaml_to_dict_parser(file)
+    arg_dataclass = SegmentationParameters(**arg_dict)
     return arg_dataclass
 
 
