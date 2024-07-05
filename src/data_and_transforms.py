@@ -62,7 +62,7 @@ class CenterCrop:
 
 
 class SegDataset(Dataset):
-    def __init__(self, data_path, crop_size):
+    def __init__(self, data_path, crop_size, train=True):
         super().__init__()
         self.tile_path = os.path.join(data_path, 'tiles/')
         self.mask_path = os.path.join(data_path, 'masks/')
@@ -70,15 +70,21 @@ class SegDataset(Dataset):
         self.mask_list = sorted(os.listdir(self.mask_path))  # , key=len)
         for i in range(len(self.tile_list)):
             print(f"{self.tile_list[i]} -----> {self.mask_list[i]}")
-        self.default_augment = A.Compose([
-            A.RandomCrop(height=crop_size,
-                         width=crop_size,
-                         always_apply=True),
-            A.HorizontalFlip(p=0.3),  # 0.5
-            A.RandomRotate90(p=0.1),  # 0.2
-        ])  # these augments need to applied to both tile and mask
-        # for any other augments, apply separate augments for tiles.
-        # masks do not need additional augments.
+        if train:
+            self.default_augment = A.Compose([
+                A.RandomCrop(height=crop_size,
+                             width=crop_size,
+                             always_apply=True),
+                A.HorizontalFlip(p=0.3),  # 0.5
+                A.RandomRotate90(p=0.1),  # 0.2
+            ])  # these augments need to applied to both tile and mask
+            # for any other augments, apply separate augments for tiles.
+            # masks do not need additional augments.
+        else:
+            # for testing/validation
+            self.default_augment = A.CenterCrop(height=crop_size,
+                                                width=crop_size,
+                                                always_apply=True)
 
     def __len__(self):
         return len(self.tile_list)

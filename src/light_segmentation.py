@@ -13,6 +13,7 @@ from src.checkpoints import load_dino_checkpoint, prepare_arch
 from torchmetrics import JaccardIndex
 from src.nnblocks import ClipSegStyleDecoder
 from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 import os
 
@@ -78,7 +79,7 @@ class LitSeg(L.LightningModule):
         output = self.model(samples)
         output = torch.squeeze(output, 1)
         loss = self.loss(output, targets)
-        self.log('train/loss', loss)
+        self.log('train/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -89,8 +90,19 @@ class LitSeg(L.LightningModule):
         output = torch.squeeze(output, 1)
         loss = self.loss(output, targets)
         iou = self.mIoU(output, targets)
-        self.log('val/loss', loss, True)
-        self.log('val/mIoU', iou, True)
+        self.log('val/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
+        self.log('val/mIoU', iou, prog_bar=True, on_step=False, on_epoch=True)
+
+    def test_step(self, batch, batch_idx):
+        samples = batch[0]
+        targets = batch[1]
+        # targets = targets.permute((0, 3, 1, 2))
+        output = self.model(samples)
+        output = torch.squeeze(output, 1)
+        loss = self.loss(output, targets)
+        iou = self.mIoU(output, targets)
+        self.log('test/loss', loss, True)
+        self.log('test/mIoU', iou, True)
 
 
 def train_segmentation(args):
@@ -101,13 +113,14 @@ def train_segmentation(args):
                                 patch_size=args.patch_size,
                                 reduce_dim=args.reduce_dim,
                                 n_heads=args.n_heads,
-                                complex_trans_conv=args.complex_trans_conv)
+                                complex_trans_conv=args.complex_trans_conv,
+                                freeze_backbone=args.freeze_backbone)
 
     # build the dataset
     train_path = os.path.join(args.data_path, 'train/')
     train_dataset = SegDataset(train_path, args.crop_size)
     val_path = os.path.join(args.data_path, 'val/')
-    val_dataset = SegDataset(val_path, args.crop_size)
+    val_dataset = SegDataset(val_path, args.crop_size, train=False)
 
     # lightning class
     light_seg = LitSeg(model, train_dataset, val_dataset, args)
@@ -116,7 +129,7 @@ def train_segmentation(args):
                                           every_n_epochs=int(args.max_epochs / 3),
                                           # every_n_train_steps=int(args.max_steps / 5),
                                           save_last=True)
-
+    earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=3)
     logger = TensorBoardLogger(save_dir=args.output_dir,
                                name="",
                                default_hp_metric=False)
@@ -128,8 +141,8 @@ def train_segmentation(args):
                         enable_progress_bar=True,
                         logger=logger,
                         log_every_n_steps=10,
-                        # check_val_every_n_epoch=10,
-                        callbacks=[checkpoint_callback])
+                        check_val_every_n_epoch=10,
+                        callbacks=[checkpoint_callback, earlystopping_callback])
 
     # begin training
     print("beginning the training.")
@@ -140,3 +153,17 @@ def train_segmentation(args):
         trainer.fit(model=light_seg)
     end = time.time()
     print(f"training completed. Elapsed time {end - start} seconds.")
+
+    # begin testing
+    test_path = os.path.join(args.data_path, 'test/')
+    test_dataset = SegDataset(test_path, args.crop_size, train=False)
+    test_sampler = SequentialSampler(test_dataset)
+    test_loader = DataLoader(dataset=test_dataset,
+                             sampler=test_sampler,
+                             batch_size=args.batch_size,
+                             num_workers=args.num_workers,
+                             persistent_workers=True,
+                             pin_memory=True,
+                             drop_last=False, )
+    trainer.test(model=light_seg, dataloaders=test_loader)
+

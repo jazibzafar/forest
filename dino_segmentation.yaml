@@ -12,12 +12,13 @@ crop_size: 224
 reduce_dim: 112
 n_heads: 4
 complex_trans_conv: True
+freeze_backbone: True
 # lightning
 lr: 0.001
 batch_size: 32
 num_workers: 8
 # training
-output_dir: "./test2/"
-max_epochs: 150
+output_dir: "./test3/"
+max_epochs: 500
 resume: False
 resume_ckpt: null

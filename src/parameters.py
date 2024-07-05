@@ -36,6 +36,7 @@ class SegmentationParameters:
     crop_size: int = 224
     # segmentation specific
     complex_trans_conv: bool = True
+    freeze_backbone: bool = True
     reduce_dim: int = 112
     n_heads: int = 4
     # lightning
