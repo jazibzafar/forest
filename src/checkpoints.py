@@ -16,6 +16,19 @@ def load_dino_checkpoint(checkpoint_path, checkpoint_key):
     return pretrained_model
 
 
+def load_finetuned_checkpoint(checkpoint_path):
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    checkpoint = checkpoint['state_dict']
+    # pretrained_model = OrderedDict()
+    # for k, v in checkpoint.items():
+    #     if k.startswith(checkpoint_key):
+    #         pretrained_model[k] = v
+
+    # pretrained_model = {k.replace(f"{checkpoint_key}.", ""): v for k, v in pretrained_model.items()}
+    finetuned_model = model_remove_prefix(checkpoint, "model.0.")
+    return finetuned_model
+
+
 def prepare_arch(arch, pretrained_model, patch_size):
     model = vits.__dict__[arch](patch_size=patch_size, num_classes=0)
     msg = model.load_state_dict(pretrained_model, strict=False)
@@ -25,7 +38,7 @@ def prepare_arch(arch, pretrained_model, patch_size):
 
 def remove_prefix(text, prefix):
     if text.startswith(prefix):
-        return text[len(prefix) :]
+        return text[len(prefix):]
     return text
 
 

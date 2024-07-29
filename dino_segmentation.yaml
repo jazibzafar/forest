@@ -2,7 +2,7 @@
 # DINO ARGS
 # model
 arch: "vit_tiny"
-checkpoint_path: "/home/jazib/projects/savedmodels/dino_vit_tiny_r_500k.ckpt"
+checkpoint_path: "/mnt/cluster/data_hdd/jazibmodels/dino_vitbase16_pretrain_bench_github.pth"
 checkpoint_key: "teacher"
 patch_size: 16
 # data
@@ -18,7 +18,7 @@ lr: 0.001
 batch_size: 32
 num_workers: 8
 # training
-output_dir: "./test3/"
+output_dir: "./bench_unet/"
 max_epochs: 500
 resume: False
 resume_ckpt: null

@@ -1,22 +1,39 @@
+from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from lightning.pytorch.loggers import TensorBoardLogger
+import segmentation_models_pytorch as smp
+import os
 from src.data_and_transforms import SegDataset
+from torchmetrics import JaccardIndex
+from lightning.pytorch.callbacks.early_stopping import EarlyStopping
+from torch.optim import AdamW
+import lightning as L
 import torch.nn as nn
 import time
-import torch
-import lightning as L
-from src.checkpoints import load_dino_checkpoint, prepare_arch
-from torchmetrics import JaccardIndex
-from src.nnblocks import ClipSegStyleDecoder
-from lightning.pytorch.loggers import TensorBoardLogger
-from lightning.pytorch.callbacks.early_stopping import EarlyStopping
-from lightning.pytorch.callbacks import ModelCheckpoint
-import os
 
 
-class LitSeg(L.LightningModule):
+# @dataclass
+# class ArgumentClass:
+#     data_path: str = "/home/jazib/projects/SelfSupervisedLearning/gartow_seg/single_class/"
+#     crop_size: int = 224
+#     lr: float = 1e-3
+#     batch_size: int = 64
+#     num_workers: int = 4
+#     train_ratio: float = 0.8
+#     max_epochs: int = 100
+#     output_dir: str = "./unet_bench_1/"
+
+
+class LitUnet(L.LightningModule):
     def __init__(self, model, train_dataset, val_dataset, args):
         super().__init__()
-        self.save_hyperparameters(ignore=['models'])
+        # self.model = smp.Unet(encoder_name="resnet34",
+        #                       encoder_weights="imagenet",
+        #                       in_channels=4,
+        #                       classes=1)
+        #
+        # self.dataset = SegDataBuffer(args.data_path,
+        #                              args.crop_size)
 
         self.model = model
         self.args = args
@@ -28,35 +45,19 @@ class LitSeg(L.LightningModule):
         self.lr = args.lr
         self.loss = nn.BCEWithLogitsLoss()
         self.mIoU = JaccardIndex(task="binary")
-
+        # self.train_dataset, self.val_dataset = random_split(self.dataset,
+        #                                                     [args.train_ratio, 1 - args.train_ratio])
+        # self.train_sampler = RandomSampler(self.train_dataset)
+        # self.val_sampler = SequentialSampler(self.val_dataset)
         # other things
         self.batch_size = args.batch_size
         self.num_workers = args.num_workers
-
-    def configure_optimizers(self):
-        regularized, not_regularized = [], []
-        for n, p in self.model.named_parameters():
-            if not p.requires_grad:
-                continue
-            # we do not regularize biases nor Norm parameters
-            if n.endswith(".bias") or len(p.shape) == 1:
-                not_regularized.append(p)
-            else:
-                regularized.append(p)
-        param_groups = [{'params': regularized},
-                        {'params': not_regularized, 'weight_decay': 0.}]  # weight decay is 0 because of the scheduler
-        opt = torch.optim.AdamW(param_groups, self.lr)
-        # opt_params = [x for x in self.model.parameters() if x.requires_grad]
-        # opt = torch.optim.AdamW(params=opt_params,
-        #                         lr=self.lr)
-        return opt
 
     def train_dataloader(self):
         return DataLoader(self.train_dataset,
                           num_workers=self.num_workers,
                           batch_size=self.batch_size,
                           pin_memory=True,
-                          shuffle=True,
                           drop_last=True, )
 
     def val_dataloader(self):
@@ -67,12 +68,18 @@ class LitSeg(L.LightningModule):
                           pin_memory=True,
                           drop_last=False,)
 
+    def configure_optimizers(self):
+        opt_params = [x for x in self.model.parameters() if x.requires_grad]
+        opt = AdamW(params=opt_params,
+                    lr=self.lr)
+        return opt
+
     def training_step(self, batch, batch_idx):
         samples = batch[0]
         targets = batch[1]
-        # targets = targets.permute((0, 3, 1, 2))
+        # targets = targets.squeeze(3)
         output = self.model(samples)
-        output = torch.squeeze(output, 1)
+        output = output.squeeze(1)
         loss = self.loss(output, targets)
         self.log('train/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
         return loss
@@ -80,9 +87,8 @@ class LitSeg(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         samples = batch[0]
         targets = batch[1]
-        # targets = targets.permute((0, 3, 1, 2))
         output = self.model(samples)
-        output = torch.squeeze(output, 1)
+        output = output.squeeze(1)
         loss = self.loss(output, targets)
         iou = self.mIoU(output, targets)
         self.log('val/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
@@ -93,33 +99,28 @@ class LitSeg(L.LightningModule):
         targets = batch[1]
         # targets = targets.permute((0, 3, 1, 2))
         output = self.model(samples)
-        output = torch.squeeze(output, 1)
+        output = output.squeeze(1)
         loss = self.loss(output, targets)
         iou = self.mIoU(output, targets)
         self.log('test/loss', loss, True)
         self.log('test/mIoU', iou, True)
 
 
-def train_segmentation(args):
-    # create the model
-    checkpoint = load_dino_checkpoint(args.checkpoint_path, args.checkpoint_key)
-    model_backbone = prepare_arch(args.arch, checkpoint, args.patch_size)
-    model = ClipSegStyleDecoder(backbone=model_backbone,
-                                patch_size=args.patch_size,
-                                reduce_dim=args.reduce_dim,
-                                n_heads=args.n_heads,
-                                complex_trans_conv=args.complex_trans_conv,
-                                freeze_backbone=args.freeze_backbone)
-
+def train_unet(args):
+    # arguments = ArgumentClass()
+    # unet_model = LitUnet(arguments)
+    model = smp.Unet(encoder_name="resnet34",
+                     encoder_weights="imagenet",
+                     in_channels=4,
+                     classes=1)
     # build the dataset
     train_path = os.path.join(args.data_path, 'train/')
     train_dataset = SegDataset(train_path, args.crop_size)
     val_path = os.path.join(args.data_path, 'val/')
     val_dataset = SegDataset(val_path, args.crop_size, train=False)
 
-    # lightning class
-    light_seg = LitSeg(model, train_dataset, val_dataset, args)
-    # logger and callbacks
+    unet_model = LitUnet(model, train_dataset, val_dataset, args)
+
     checkpoint_callback = ModelCheckpoint(dirpath=args.output_dir,
                                           every_n_epochs=int(args.max_epochs / 3),
                                           # every_n_train_steps=int(args.max_steps / 5),
@@ -139,16 +140,12 @@ def train_segmentation(args):
                         check_val_every_n_epoch=10,
                         callbacks=[checkpoint_callback, earlystopping_callback])
 
-    # begin training
     print("beginning the training.")
     start = time.time()
-    if args.resume:
-        trainer.fit(model=light_seg, ckpt_path=args.resume_ckpt)
-    else:
-        trainer.fit(model=light_seg)
+    trainer.fit(model=unet_model)
+    # trainer.fit(model=dino)
     end = time.time()
     print(f"training completed. Elapsed time {end - start} seconds.")
-
     # begin testing
     test_path = os.path.join(args.data_path, 'test/')
     test_dataset = SegDataset(test_path, args.crop_size, train=False)
@@ -160,5 +157,4 @@ def train_segmentation(args):
                              persistent_workers=True,
                              pin_memory=True,
                              drop_last=False, )
-    trainer.test(model=light_seg, dataloaders=test_loader)
-
+    trainer.test(model=unet_model, dataloaders=test_loader)

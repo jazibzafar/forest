@@ -6,7 +6,7 @@ from src.metrics import accuracy
 import os
 import time
 from src.nnblocks import LinearClassifier
-from src.data_and_transforms import ClassificationTransform, CenterCrop
+from src.data_and_transforms import UsualTransform, CenterCrop
 from torchvision.datasets import ImageFolder
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
@@ -101,7 +101,7 @@ def train_classification(args):
     model = nn.Sequential(model_backbone, linear_classifier)
 
     # build the dataset
-    train_transform = ClassificationTransform(args.input_size)
+    train_transform = UsualTransform(args.input_size)
     train_path = os.path.join(args.data_path, "train")
     train_dataset = ImageFolder(root=train_path, transform=train_transform, loader=img_loader)
     val_transform = CenterCrop(args.input_size)
