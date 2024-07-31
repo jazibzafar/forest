@@ -21,7 +21,7 @@ class LinearClassifier(nn.Module):
 
 class ClipSegStyleDecoder(nn.Module):
     """ClipSeg style decoder for segmentation with plain ViTs."""
-    def __init__(self, backbone, patch_size, reduce_dim, n_heads, complex_trans_conv=False, freeze_backbone=True, num_classes=1, extract_layers=(3, 6, 9)):
+    def __init__(self, backbone, patch_size, reduce_dim, n_heads, simple_decoder=False, freeze_backbone=True, num_classes=1, extract_layers=(3, 6, 9)):
         super().__init__()
         self.backbone = backbone
         self.extract_layers = extract_layers
@@ -31,17 +31,17 @@ class ClipSegStyleDecoder(nn.Module):
         self.reduces = nn.ModuleList([nn.Linear(self.backbone.embed_dim, reduce_dim) for _ in range(depth)])
         self.blocks = nn.ModuleList(
             [nn.TransformerEncoderLayer(d_model=reduce_dim, nhead=n_heads) for _ in range(len(extract_layers))])
-        if complex_trans_conv:
+        if simple_decoder:
+            self.trans_conv = nn.ConvTranspose2d(reduce_dim, num_classes, trans_conv_ks, stride=trans_conv_ks)
+        else:
             tp_kernels = (trans_conv_ks[0] // 4, trans_conv_ks[0] // 4)
             self.trans_conv = nn.Sequential(
-                    nn.Conv2d(reduce_dim, reduce_dim, kernel_size=3, padding=1),
-                    nn.ReLU(),
-                    nn.ConvTranspose2d(reduce_dim, reduce_dim // 2, kernel_size=tp_kernels[0], stride=tp_kernels[0]),
-                    nn.ReLU(),
-                    nn.ConvTranspose2d(reduce_dim // 2, 1, kernel_size=tp_kernels[1], stride=tp_kernels[1]),
-                    )
-        else:
-            self.trans_conv = nn.ConvTranspose2d(reduce_dim, num_classes, trans_conv_ks, stride=trans_conv_ks)
+                nn.Conv2d(reduce_dim, reduce_dim, kernel_size=3, padding=1),
+                nn.ReLU(),
+                nn.ConvTranspose2d(reduce_dim, reduce_dim // 2, kernel_size=tp_kernels[0], stride=tp_kernels[0]),
+                nn.ReLU(),
+                nn.ConvTranspose2d(reduce_dim // 2, 1, kernel_size=tp_kernels[1], stride=tp_kernels[1]),
+            )
 
         if freeze_backbone:
             for p in self.backbone.parameters():

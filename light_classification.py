@@ -6,6 +6,7 @@ from src.metrics import accuracy
 import os
 import time
 from src.nnblocks import LinearClassifier
+from src.utils import write_dict_to_yaml
 from src.data_and_transforms import UsualTransform, CenterCrop
 from torchvision.datasets import ImageFolder
 from lightning.pytorch.callbacks import ModelCheckpoint
@@ -13,6 +14,48 @@ from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.loggers import TensorBoardLogger
 from src.checkpoints import load_dino_checkpoint, prepare_arch
 from src.data_and_transforms import img_loader
+import argparse
+from src.utils import event_to_yml
+
+
+def get_args_parser_class():
+    parser = argparse.ArgumentParser('Classification Parser', add_help=True)
+    parser.add_argument('--arch', default='vit_small', type=str,
+                        # choices=['vit_tiny', 'vit_small', 'vit_base']
+                        help="""Name of architecture to train.""")
+    parser.add_argument('--checkpoint_path', default='/path/to/checkpoint/', type=str,
+                        help='Please specify path to the saved checkpoint.')
+    parser.add_argument('--checkpoint_key', default='teacher', type=str,
+                        # choices = ['teacher', 'student']
+                        help="""Please specify whether to use teacher or student network.""")
+    parser.add_argument('--patch_size', default=16, type=int,
+                        help="""Size in pixels of input square patches - default 16 (for 16x16 patches). 
+                        Using smaller values leads to better performance but requires more memory""")
+    parser.add_argument('--num_classes', default=10, type=int,
+                        help="""number of data classes.""")
+    parser.add_argument('--linear_eval', action='store_true',
+                        help="""Please specify whether to train the entire network (default) or
+                        just the classification layer.""")
+    parser.add_argument('--data_path', default='/path/to/data/', type=str,
+                        help="""Please specify path to the training data.""")
+    parser.add_argument('--input_size', default=96, type=int,
+                        help="""size of images to be fed to the network. independent of actual
+                        image size. should be divisible by 16.""")
+    parser.add_argument('--lr', default=0.00001, type=float,
+                        help="""learning rate""")
+    parser.add_argument('--batch_size', default=32, type=int,
+                        help="""batch size""")
+    parser.add_argument('--num_workers', default=8, type=int,
+                        help="""number of dataloader workers""")
+    parser.add_argument('--output_dir', default='/path/to/data/', type=str,
+                        help="""Please specify path to the training data.""")
+    parser.add_argument('--max_epochs', default=100, type=int,
+                        help="""max number of training epochs.""")
+    parser.add_argument('--resume', action='store_true',
+                        help="""pass this if resuming training. False by default.""")
+    parser.add_argument('--resume_ckpt', default='/path/to/resume/checkpoint/', type=str,
+                        help='in case of resuming training. specify the path to the checkpoint.')
+    return parser
 
 
 class LitClass(L.LightningModule):
@@ -155,3 +198,13 @@ def train_classification(args):
                              drop_last=False, )
     trainer.test(model=light_class, dataloaders=test_loader)
 
+    # writing stats from tensorboard logs to yml
+    event_to_yml(os.path.join(args.output_dir, "version_0"))
+
+
+if __name__ == '__main__':
+    args = get_args_parser_class().parse_args()
+    # write args to a yml file in output dir
+    args_yml_fp = os.path.join(args.output_dir, "args.yaml")
+    write_dict_to_yaml(args_yml_fp, args.__dict__)
+    train_classification(args)

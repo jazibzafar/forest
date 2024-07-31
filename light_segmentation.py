@@ -7,10 +7,58 @@ import lightning as L
 from src.checkpoints import load_dino_checkpoint, prepare_arch
 from torchmetrics import JaccardIndex
 from src.nnblocks import ClipSegStyleDecoder
+from src.utils import write_dict_to_yaml, event_to_yml
 from lightning.pytorch.loggers import TensorBoardLogger
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks import ModelCheckpoint
 import os
+import argparse
+
+
+def get_args_parser_semseg():
+    parser = argparse.ArgumentParser('Segmentation Parser', add_help=True)
+    parser.add_argument('--arch', default='vit_small', type=str,
+                        # choices=['vit_tiny', 'vit_small', 'vit_base']
+                        help="""Name of architecture to train.""")
+    parser.add_argument('--checkpoint_path', default='/path/to/checkpoint/', type=str,
+                        help='Please specify path to the saved checkpoint.')
+    parser.add_argument('--checkpoint_key', default='teacher', type=str,
+                        # choices = ['teacher', 'student']
+                        help="""Please specify whether to use teacher or student network.""")
+    parser.add_argument('--patch_size', default=16, type=int,
+                        help="""Size in pixels of input square patches - default 16 (for 16x16 patches). 
+                            Using smaller values leads to better performance but requires more memory""")
+    parser.add_argument('--data_path', default='/path/to/data/', type=str,
+                        help="""Please specify path to the training data.""")
+    parser.add_argument('--input_size', default=16, type=int,
+                        help="""size of the input to the network. should be divisible by 16. """)
+    # TODO: when adding more decoders below used the arch style input. see above.
+    parser.add_argument('--simple_decoder', action='store_true',
+                        help="""by default complex clip seg decoder is used. pass this if simple
+                        decoder should be used instead""")
+    parser.add_argument('--freeze_backbone', action='store_true',
+                        help="""backbone frozen by default (only decoder is trained). Pass
+                        this to train the entire network instead.""")
+    parser.add_argument('--reduce_dim', default=112, type=int,
+                        help="""decoder reduces the dim of the input to this size.""")
+    parser.add_argument('--decoder_head_count', default=4, type=int,
+                        help="""number of decoder heads.""")
+    parser.add_argument('--lr', default=0.00001, type=float,
+                        help="""learning rate""")
+    parser.add_argument('--batch_size', default=32, type=int,
+                        help="""batch size""")
+    parser.add_argument('--num_workers', default=8, type=int,
+                        help="""number of dataloader workers""")
+    parser.add_argument('--output_dir', default='/path/to/data/', type=str,
+                        help="""Please specify path to the training data.""")
+    parser.add_argument('--max_epochs', default=150, type=int,
+                        help="""max number of training epochs.""")
+    parser.add_argument('--resume', action='store_true',
+                        help="""pass this if resuming training. False by default.""")
+    parser.add_argument('--resume_ckpt', default='/path/to/resume/checkpoint/', type=str,
+                        help='in case of resuming training. specify the path to the checkpoint.')
+    return parser
+
 
 
 class LitSeg(L.LightningModule):
@@ -107,8 +155,8 @@ def train_segmentation(args):
     model = ClipSegStyleDecoder(backbone=model_backbone,
                                 patch_size=args.patch_size,
                                 reduce_dim=args.reduce_dim,
-                                n_heads=args.n_heads,
-                                complex_trans_conv=args.complex_trans_conv,
+                                n_heads=args.decoder_head_count,
+                                simple_decoder=args.simple_decoder,
                                 freeze_backbone=args.freeze_backbone)
 
     # build the dataset
@@ -162,3 +210,13 @@ def train_segmentation(args):
                              drop_last=False, )
     trainer.test(model=light_seg, dataloaders=test_loader)
 
+    # writing stats from tensorboard logs to yml
+    event_to_yml(os.path.join(args.output_dir, "version_0"))
+
+
+if __name__ == '__main__':
+    args = get_args_parser_semseg().parse_args()
+    # write args to a yml file in output dir
+    args_yml_fp = os.path.join(args.output_dir, "args.yaml")
+    write_dict_to_yaml(args_yml_fp, args.__dict__)
+    train_segmentation(args)
