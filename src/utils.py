@@ -2,6 +2,7 @@ import yaml
 import os
 import csv
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+import argparse
 
 
 def yaml_to_dict_parser(file):
@@ -49,4 +50,15 @@ def event_to_yml(path):
     write_dict_to_yaml(write_file, stat_dict)
 
 
-
+def bool_flag(s):
+    """
+    Parse boolean arguments from the command line.
+    """
+    FALSY_STRINGS = {"off", "false", "0"}
+    TRUTHY_STRINGS = {"on", "true", "1"}
+    if s.lower() in FALSY_STRINGS:
+        return False
+    elif s.lower() in TRUTHY_STRINGS:
+        return True
+    else:
+        raise argparse.ArgumentTypeError("invalid value for a boolean flag")
