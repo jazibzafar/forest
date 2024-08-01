@@ -161,9 +161,9 @@ def train_segmentation(args):
 
     # build the dataset
     train_path = os.path.join(args.data_path, 'train/')
-    train_dataset = SegDataset(train_path, args.crop_size)
+    train_dataset = SegDataset(train_path, args.input_size)
     val_path = os.path.join(args.data_path, 'val/')
-    val_dataset = SegDataset(val_path, args.crop_size, train=False)
+    val_dataset = SegDataset(val_path, args.input_size, train=False)
 
     # lightning class
     light_seg = LitSeg(model, train_dataset, val_dataset, args)
@@ -199,7 +199,7 @@ def train_segmentation(args):
 
     # begin testing
     test_path = os.path.join(args.data_path, 'test/')
-    test_dataset = SegDataset(test_path, args.crop_size, train=False)
+    test_dataset = SegDataset(test_path, args.input_size, train=False)
     test_sampler = SequentialSampler(test_dataset)
     test_loader = DataLoader(dataset=test_dataset,
                              sampler=test_sampler,

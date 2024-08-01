@@ -5,7 +5,7 @@ import src.vits as vits
 
 def load_dino_checkpoint(checkpoint_path, checkpoint_key):
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
-    checkpoint = checkpoint['state_dict']
+    # checkpoint = checkpoint['state_dict']
     pretrained_model = OrderedDict()
     for k, v in checkpoint.items():
         if k.startswith(checkpoint_key):
