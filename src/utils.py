@@ -11,9 +11,9 @@ def yaml_to_dict_parser(file):
     return yml_params
 
 
-def write_dict_to_yaml(yaml_file, dict_in):
+def write_dict_to_yaml(yaml_file, dict_in, default_flow_style=False):
     with open(yaml_file, 'w') as outfile:
-        yaml.dump(dict_in, outfile, default_flow_style=False)
+        yaml.dump(dict_in, outfile, default_flow_style=default_flow_style)
 
 
 def write_dict_to_csv(file_to_write, dict_to_write):
