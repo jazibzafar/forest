@@ -24,21 +24,20 @@ def img_loader(path):
     return imread(path)
 
 
-def get_crop_indices(size, split_size, overlap=0):
-    points = [0]
-    stride = int(split_size * (1-overlap))
-    counter = 1
-    while True:
-        pt = stride * counter
-        if pt + split_size >= size:
-            if split_size == size:
-                break
-            points.append(size - split_size)
-            break
+def get_crop_indices(length, window, overlap):
+    if length == window: return [0]
+    stride = int((1 - overlap) * window)
+    num_strides = length // stride
+    indices = []
+    for i in range(num_strides+1):
+        idx = i*stride
+        if not idx + window >= length:
+            indices.append(idx)
         else:
-            points.append(pt)
-        counter += 1
-    return points
+            last_index = length - window
+            #  to prevent repetition of last index
+            if not last_index == indices[-1]: indices.append(length - window)
+    return indices
 
 
 def create_crops(img, crop_size, overlap):
@@ -46,10 +45,12 @@ def create_crops(img, crop_size, overlap):
     x_coords = get_crop_indices(img_w, crop_size, overlap)
     y_coords = get_crop_indices(img_h, crop_size, overlap)
     crops = []
+    points = []
     for i in x_coords:
         for j in y_coords:
             crops.append(img[i:i+crop_size, j:j+crop_size])
-    return crops
+            points.append((i,j))
+    return crops, points
 
 
 class UsualTransform:

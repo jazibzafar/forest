@@ -159,7 +159,7 @@ def train_classification(args):
                                           every_n_epochs=int(args.max_epochs / 3),
                                           # every_n_train_steps=int(args.max_steps / 5),
                                           save_last=True)
-    earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min')
+    earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=2)
     logger = TensorBoardLogger(save_dir=args.output_dir,
                                name="",
                                default_hp_metric=False)
