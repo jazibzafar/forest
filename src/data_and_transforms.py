@@ -158,8 +158,8 @@ class SegDataset(Dataset):
         self.mask_path = os.path.join(data_path, 'masks/')
         self.tile_list = sorted(os.listdir(self.tile_path))  # , key=len)  # this is a list
         self.mask_list = sorted(os.listdir(self.mask_path))  # , key=len)
-        for i in range(len(self.tile_list)):
-            print(f"{self.tile_list[i]} -----> {self.mask_list[i]}")
+        # for i in range(len(self.tile_list)):
+        #     print(f"{self.tile_list[i]} -----> {self.mask_list[i]}")
         if train:
             self.default_augment = A.Compose([
                 A.RandomCrop(height=crop_size,

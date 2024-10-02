@@ -15,7 +15,7 @@ from src.vits import DINOHead
 from src.utils import bool_flag
 from src.nnblocks import MultiCropWrapper
 from src.data_and_transforms import DINOTransform, GeoWebDataset
-
+from torchvision.models import resnet50
 
 # TODO: add support for torch compile
 # DONE: add support for only training steps eliminate epochs altogether
@@ -87,7 +87,7 @@ def get_args_parser():
     parser.add_argument('--min_lr', type=float, default=1e-6, help="""Target LR at the
         end of optimization. We use a cosine LR schedule with linear warmup.""")
     parser.add_argument('--optimizer', default='adamw', type=str,
-                        choices=['adamw', 'sgd', 'lars'],
+                        choices=['adamw', 'sgd'],
                         help="""Type of optimizer. We recommend using adamw with ViTs.""")
     parser.add_argument('--drop_path_rate', type=float, default=0.1, help="stochastic depth rate")
 
@@ -201,20 +201,28 @@ class LitDINO(L.LightningModule):
         # ======= create student & teacher networks =======#
         if args.arch in vits.__dict__.keys():
             model = vits.__dict__[args.arch]
+            student_backbone = model(patch_size=args.patch_size,
+                                     drop_path_rate=args.drop_path_rate,
+                                     in_chans=args.in_chans)
+            teacher_backbone = model(patch_size=args.patch_size, in_chans=args.in_chans)
+            student_in_dim_dinohead = student_backbone.embed_dim
+            teacher_in_dim_dinohead = teacher_backbone.embed_dim
+        elif args.arch == "resnet50":
+            model = resnet50(progress=False)
+            model.conv1 = nn.Conv2d(args.in_chans, 64, kernel_size=7, stride=2, padding=3, bias=False)
+            student_backbone = model
+            teacher_backbone = model
+            student_in_dim_dinohead = model.fc.in_features
+            teacher_in_dim_dinohead = model.fc.in_features
         else:
             raise Exception(f"Unknown architecture: {args.arch}")
 
-        student_backbone = model(patch_size=args.patch_size,
-                                 drop_path_rate=args.drop_path_rate,
-                                 in_chans=args.in_chans)
-        teacher_backbone = model(patch_size=args.patch_size, in_chans=args.in_chans)
-
-        student_head = DINOHead(in_dim=student_backbone.embed_dim,
+        student_head = DINOHead(in_dim=student_in_dim_dinohead,
                                 out_dim=args.out_dim,
                                 use_bn=args.use_bn_in_head,
                                 norm_last_layer=args.norm_last_layer)
 
-        teacher_head = DINOHead(in_dim=teacher_backbone.embed_dim,
+        teacher_head = DINOHead(in_dim=teacher_in_dim_dinohead,
                                 out_dim=args.out_dim)
 
         self.student = MultiCropWrapper(student_backbone, student_head)
@@ -257,7 +265,12 @@ class LitDINO(L.LightningModule):
                         {'params': not_regularized, 'weight_decay': 0.}]  # weight decay is 0 because of the scheduler
 
         self.lr = args.lr * (args.batch_size_per_gpu * args.world_size / 256)
-        opt = torch.optim.AdamW(param_groups, self.lr)
+        if args.optimizer == "adamw":
+            opt = torch.optim.AdamW(param_groups, self.lr)
+        elif args.optimizer == "sgd":
+            opt = torch.optim.SGD(param_groups, self.lr)
+        else:
+            raise Exception(f"Unknown optimizer: {args.optimizer}")
         return opt
 
     def train_dataloader(self):
