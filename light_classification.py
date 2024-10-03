@@ -41,6 +41,8 @@ def get_args_parser_class():
     parser.add_argument('--input_size', default=96, type=int,
                         help="""size of images to be fed to the network. independent of actual
                         image size. should be divisible by 16.""")
+    parser.add_argument('--num_chans', default=4, type=int,
+                        help="""Number of input channels""")
     parser.add_argument('--lr', default=0.00001, type=float,
                         help="""learning rate""")
     parser.add_argument('--batch_size', default=32, type=int,
@@ -138,7 +140,7 @@ class LitClass(L.LightningModule):
 def train_classification(args):
     # create the model
     checkpoint = load_dino_checkpoint(args.checkpoint_path, args.checkpoint_key)
-    model_backbone = prepare_arch(args.arch, checkpoint, args.patch_size)
+    model_backbone = prepare_arch(args.arch, checkpoint, args.patch_size, args.num_chans)
     linear_classifier = LinearClassifier(model_backbone.embed_dim, args.num_classes)
     model_backbone.eval() if args.linear_eval else model_backbone.train()
     model = nn.Sequential(model_backbone, linear_classifier)

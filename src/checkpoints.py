@@ -3,17 +3,37 @@ from collections import OrderedDict
 import src.vits as vits
 
 
-def load_dino_checkpoint(checkpoint_path, checkpoint_key):
+def load_dino_checkpoint(checkpoint_path, checkpoint_key, num_chans=4):
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    pretrained_model = checkpoint[checkpoint_key]
+    pretrained_model = model_remove_prefix(pretrained_model, 'backbone.')
     # checkpoint = checkpoint['state_dict']
-    pretrained_model = OrderedDict()
+    # pretrained_model = OrderedDict()
+    # for k, v in checkpoint.items():
+    #     if k.startswith(checkpoint_key):
+    #         pretrained_model[k] = v
+    #
+    # pretrained_model = {k.replace(f"{checkpoint_key}.", ""): v for k, v in pretrained_model.items()}
+    # pretrained_model = {k.replace("backbone.", ""): v for k, v in pretrained_model.items()}
+    return pretrained_model
+
+
+def extract_backbone(checkpoint, checkpoint_key):
+    backbone = OrderedDict()
     for k, v in checkpoint.items():
         if k.startswith(checkpoint_key):
-            pretrained_model[k] = v
+            backbone[k] = v
 
-    pretrained_model = {k.replace(f"{checkpoint_key}.", ""): v for k, v in pretrained_model.items()}
-    pretrained_model = {k.replace("backbone.", ""): v for k, v in pretrained_model.items()}
-    return pretrained_model
+    backbone = {k.replace(f"{checkpoint_key}.", ""): v for k, v in backbone.items()}
+    backbone = {k.replace("backbone.", ""): v for k, v in backbone.items()}
+    return backbone
+
+
+def convert_checkpoint_to_backbone(checkpoint):
+    checkpoint = checkpoint['state_dict']
+    backbone_teacher = extract_backbone(checkpoint, 'teacher')
+    backbone_student = extract_backbone(checkpoint, 'student')
+    return {'student': backbone_student, 'teacher': backbone_teacher}
 
 
 def load_finetuned_checkpoint(checkpoint_path):
@@ -29,10 +49,22 @@ def load_finetuned_checkpoint(checkpoint_path):
     return finetuned_model
 
 
-def prepare_arch(arch, pretrained_model, patch_size):
-    model = vits.__dict__[arch](patch_size=patch_size, num_classes=0)
-    msg = model.load_state_dict(pretrained_model, strict=False)
-    print(msg)
+def prepare_arch(arch, pretrained_model, patch_size, num_chans=4):
+    if pretrained_model['patch_embed.proj.weight'].size(1) != num_chans:
+        model = vits.__dict__[arch](patch_size=patch_size, num_classes=0, in_chans=3)
+        msg = model.load_state_dict(pretrained_model, strict=False)
+        print(msg)
+        # Adapt is to four channels.
+        weight = model.patch_embed.proj.weight.clone()
+        model.patch_embed.proj = torch.nn.Conv2d(4, 768, kernel_size=(16, 16), stride=(16, 16))
+        with torch.no_grad():
+            model.patch_embed.proj.weight[:, :3] = weight
+            # this line below assigns red weights to nir channel.
+            model.patch_embed.proj.weight[:, 3] = model.patch_embed.proj.weight[:, 0]
+    else:
+        model = vits.__dict__[arch](patch_size=patch_size, num_classes=0)
+        msg = model.load_state_dict(pretrained_model, strict=False)
+        print(msg)
     return model
 
 
