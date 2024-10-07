@@ -1,12 +1,16 @@
 import torch
 from collections import OrderedDict
 import src.vits as vits
+from torchvision.models import resnet50
 
 
-def load_dino_checkpoint(checkpoint_path, checkpoint_key, num_chans=4):
+def load_dino_checkpoint(checkpoint_path, checkpoint_key):
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
-    pretrained_model = checkpoint[checkpoint_key]
-    pretrained_model = model_remove_prefix(pretrained_model, 'backbone.')
+    try:
+        pretrained_model = checkpoint[checkpoint_key]
+    except KeyError:
+        pretrained_model = checkpoint
+    # pretrained_model = model_remove_prefix(pretrained_model, 'backbone.')
     # checkpoint = checkpoint['state_dict']
     # pretrained_model = OrderedDict()
     # for k, v in checkpoint.items():
@@ -49,22 +53,38 @@ def load_finetuned_checkpoint(checkpoint_path):
     return finetuned_model
 
 
-def prepare_arch(arch, pretrained_model, patch_size, num_chans=4):
+def prepare_vit(arch, pretrained_model, patch_size, num_chans=4):
     if pretrained_model['patch_embed.proj.weight'].size(1) != num_chans:
         model = vits.__dict__[arch](patch_size=patch_size, num_classes=0, in_chans=3)
         msg = model.load_state_dict(pretrained_model, strict=False)
         print(msg)
         # Adapt is to four channels.
         weight = model.patch_embed.proj.weight.clone()
-        model.patch_embed.proj = torch.nn.Conv2d(4, 768, kernel_size=(16, 16), stride=(16, 16))
+        model.patch_embed.proj = torch.nn.Conv2d(num_chans, model.embed_dim,
+                                                 kernel_size=(patch_size, patch_size), stride=(patch_size, patch_size))
         with torch.no_grad():
-            model.patch_embed.proj.weight[:, :3] = weight
+            model.patch_embed.proj.weight[:, :num_chans-1] = weight
             # this line below assigns red weights to nir channel.
-            model.patch_embed.proj.weight[:, 3] = model.patch_embed.proj.weight[:, 0]
+            model.patch_embed.proj.weight[:, num_chans-1] = model.patch_embed.proj.weight[:, 0]
     else:
         model = vits.__dict__[arch](patch_size=patch_size, num_classes=0)
         msg = model.load_state_dict(pretrained_model, strict=False)
         print(msg)
+    return model
+
+
+def prepare_resnet(arch, pretrained_model, num_chans=4):
+    model = resnet50()
+
+    # adapt the first conv layer to num_chans
+    if model.conv1.in_channels != num_chans:
+        weight = model.conv1.weight.clone()
+        model.conv1 =torch.nn.Conv2d(num_chans, 64, kernel_size=(7,7), stride=(2,2), padding=(3,3), bias=False)
+        with torch.no_grad():
+            model.conv1.weight[:, :num_chans-1] = weight
+            model.conv1.weight[:, num_chans-1] = model.conv1.weight[:,0]
+    msg = model.load_state_dict(pretrained_model, strict=False)
+    print(msg)
     return model
 
 

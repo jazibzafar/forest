@@ -41,7 +41,7 @@ def get_crop_indices(length, window, overlap):
 
 
 def create_crops(img, crop_size, overlap):
-    img_h, img_w = img.shape
+    img_h, img_w = img.shape[0:2]
     x_coords = get_crop_indices(img_w, crop_size, overlap)
     y_coords = get_crop_indices(img_h, crop_size, overlap)
     crops = []
@@ -224,7 +224,7 @@ class SegDataMemBuffer(Dataset):
             tile = imread(os.path.join(tile_path, ti))
             mask = imread(os.path.join(mask_path, ma))
             stacked = np.dstack((tile, mask))
-            slices = create_crops(stacked, crop_size, crop_overlap)
+            slices, _ = create_crops(stacked, crop_size, crop_overlap)
             data_buffer.extend(slices)
         if shuffle:
             random.shuffle(data_buffer)

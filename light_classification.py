@@ -11,17 +11,20 @@ from src.data_and_transforms import UsualTransform, CenterCrop
 from torchvision.datasets import ImageFolder
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
+from lightning.pytorch.callbacks.device_stats_monitor import DeviceStatsMonitor
 from lightning.pytorch.loggers import TensorBoardLogger
-from src.checkpoints import load_dino_checkpoint, prepare_arch
+from src.checkpoints import load_dino_checkpoint, prepare_vit, prepare_resnet
 from src.data_and_transforms import img_loader
 import argparse
 from src.utils import event_to_yml
+from lightning.pytorch.callbacks import Callback
+from lightning.pytorch.callbacks import ModelSummary
 
 
 def get_args_parser_class():
     parser = argparse.ArgumentParser('Classification Parser', add_help=True)
-    parser.add_argument('--arch', default='vit_small', type=str,
-                        # choices=['vit_tiny', 'vit_small', 'vit_base']
+    parser.add_argument('--arch', default='', type=str,
+                        # choices=['vit_tiny', 'vit_small', 'vit_base', 'resnet50']
                         help="""Name of architecture to train.""")
     parser.add_argument('--checkpoint_path', default='/path/to/checkpoint/', type=str,
                         help='Please specify path to the saved checkpoint.')
@@ -60,10 +63,18 @@ def get_args_parser_class():
     return parser
 
 
+class MyPrintingCallback(Callback):
+    def on_train_start(self, trainer, pl_module):
+        print("Training is starting")
+
+    def on_train_end(self, trainer, pl_module):
+        print("Training is ending")
+
+
 class LitClass(L.LightningModule):
     def __init__(self, model, train_dataset, val_dataset, args):
         super().__init__()
-        self.save_hyperparameters(ignore=['models'])
+        self.save_hyperparameters(ignore=['model'])
 
         self.model = model
         self.args = args
@@ -140,11 +151,19 @@ class LitClass(L.LightningModule):
 def train_classification(args):
     # create the model
     checkpoint = load_dino_checkpoint(args.checkpoint_path, args.checkpoint_key)
-    model_backbone = prepare_arch(args.arch, checkpoint, args.patch_size, args.num_chans)
-    linear_classifier = LinearClassifier(model_backbone.embed_dim, args.num_classes)
+
+    if args.arch.startswith("vit_"):
+        model_backbone = prepare_vit(args.arch, checkpoint, args.patch_size, args.num_chans)
+        linear_classifier = LinearClassifier(model_backbone.embed_dim, args.num_classes)
+    elif args.arch.startswith("res"):
+        model_backbone = prepare_resnet(args.arch, checkpoint, args.num_chans)
+        linear_classifier = LinearClassifier(model_backbone.fc.out_features, args.num_classes)
+    else:
+        raise Exception("Please select a valid model.")
+
+
     model_backbone.eval() if args.linear_eval else model_backbone.train()
     model = nn.Sequential(model_backbone, linear_classifier)
-
     # build the dataset
     train_transform = UsualTransform(args.input_size)
     train_path = os.path.join(args.data_path, "train")
@@ -161,10 +180,12 @@ def train_classification(args):
                                           every_n_epochs=int(args.max_epochs / 3),
                                           # every_n_train_steps=int(args.max_steps / 5),
                                           save_last=True)
-    earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=2)
+    earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=5)
     logger = TensorBoardLogger(save_dir=args.output_dir,
                                name="",
                                default_hp_metric=False)
+    # mymonitor = DeviceStatsMonitor()
+    # model_summary = ModelSummary(max_depth=-1)
 
     # trainer
     trainer = L.Trainer(accelerator='gpu',
@@ -173,7 +194,8 @@ def train_classification(args):
                         enable_progress_bar=True,
                         logger=logger,
                         log_every_n_steps=10,
-                        # check_val_every_n_epoch=10,
+                        check_val_every_n_epoch=3,
+                        profiler='simple',
                         callbacks=[checkpoint_callback, earlystopping_callback])
 
     # begin training
@@ -183,6 +205,7 @@ def train_classification(args):
         trainer.fit(model=light_class, ckpt_path=args.resume_ckpt)
     else:
         trainer.fit(model=light_class)
+
     end = time.time()
     print(f"training completed. Elapsed time {end - start} seconds.")
 
