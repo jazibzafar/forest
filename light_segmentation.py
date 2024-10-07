@@ -1,16 +1,18 @@
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from src.data_and_transforms import SegDataset
+from src.data_and_transforms import SegDataset, SegDataMemBuffer
 import torch.nn as nn
 import time
 import torch
 import lightning as L
-from src.checkpoints import load_dino_checkpoint, prepare_arch
+from src.checkpoints import load_dino_checkpoint, prepare_vit
 from torchmetrics import JaccardIndex
 from src.nnblocks import ClipSegStyleDecoder
+from src.predict_on_array import predict_on_array_cf
 from src.utils import write_dict_to_yaml, event_to_yml
 from lightning.pytorch.loggers import TensorBoardLogger
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import ModelCheckpoint, DeviceStatsMonitor
+from lightning.pytorch.callbacks import Callback
 import os
 import argparse
 
@@ -30,7 +32,7 @@ def get_args_parser_semseg():
                             Using smaller values leads to better performance but requires more memory""")
     parser.add_argument('--data_path', default='/path/to/data/', type=str,
                         help="""Please specify path to the training data.""")
-    parser.add_argument('--input_size', default=16, type=int,
+    parser.add_argument('--input_size', default=224, type=int,
                         help="""size of the input to the network. should be divisible by 16. """)
     # TODO: when adding more decoders below used the arch style input. see above.
     parser.add_argument('--simple_decoder', action='store_true',
@@ -60,11 +62,21 @@ def get_args_parser_semseg():
     return parser
 
 
+class MyPrintingCallback(Callback):
+    def on_sanity_check_start(self, trainer, pl_module) -> None:
+        print("sanity checking")
+
+    def on_train_start(self, trainer, pl_module):
+        print("Training is starting")
+
+    def on_train_end(self, trainer, pl_module):
+        print("Training is ending")
+
 
 class LitSeg(L.LightningModule):
     def __init__(self, model, train_dataset, val_dataset, args):
         super().__init__()
-        self.save_hyperparameters(ignore=['models'])
+        self.save_hyperparameters(ignore=['model'])
 
         self.model = model
         self.args = args
@@ -137,11 +149,18 @@ class LitSeg(L.LightningModule):
         self.log('val/mIoU', iou, prog_bar=True, on_step=False, on_epoch=True)
 
     def test_step(self, batch, batch_idx):
-        samples = batch[0]
-        targets = batch[1]
-        # targets = targets.permute((0, 3, 1, 2))
-        output = self.model(samples)
-        output = torch.squeeze(output, 1)
+        sample = batch[0].squeeze(0).cpu().numpy()
+        targets = batch[1].squeeze(0).cpu().numpy()
+        pred = predict_on_array_cf(self.model.eval(), sample,
+                                   in_shape=(4, 992, 992),
+                                   out_bands=args.num_classes,
+                                   drop_border=0,
+                                   stride=26,
+                                   batchsize=1,
+                                   augmentation=True)
+        output = pred["prediction"]
+        output = torch.Tensor(output).squeeze(0).to(self.device)
+        targets = torch.Tensor(targets).to(self.device)
         loss = self.loss(output, targets)
         iou = self.mIoU(output, targets)
         self.log('test/loss', loss, True)
@@ -151,7 +170,7 @@ class LitSeg(L.LightningModule):
 def train_segmentation(args):
     # create the model
     checkpoint = load_dino_checkpoint(args.checkpoint_path, args.checkpoint_key)
-    model_backbone = prepare_arch(args.arch, checkpoint, args.patch_size)
+    model_backbone = prepare_vit(args.arch, checkpoint, args.patch_size)
     model = ClipSegStyleDecoder(backbone=model_backbone,
                                 patch_size=args.patch_size,
                                 reduce_dim=args.reduce_dim,
@@ -161,9 +180,9 @@ def train_segmentation(args):
 
     # build the dataset
     train_path = os.path.join(args.data_path, 'train/')
-    train_dataset = SegDataset(train_path, args.input_size)
+    train_dataset = SegDataMemBuffer(train_path, args.input_size, crop_overlap=0.4)
     val_path = os.path.join(args.data_path, 'val/')
-    val_dataset = SegDataset(val_path, args.input_size, train=False)
+    val_dataset = SegDataMemBuffer(val_path, args.input_size, crop_overlap=0.4)
 
     # lightning class
     light_seg = LitSeg(model, train_dataset, val_dataset, args)
@@ -172,7 +191,9 @@ def train_segmentation(args):
                                           every_n_epochs=int(args.max_epochs / 3),
                                           # every_n_train_steps=int(args.max_steps / 5),
                                           save_last=True)
-    earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=3)
+    earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=5)
+    my_callback = MyPrintingCallback()
+    mymonitor = DeviceStatsMonitor()
     logger = TensorBoardLogger(save_dir=args.output_dir,
                                name="",
                                default_hp_metric=False)
@@ -184,9 +205,10 @@ def train_segmentation(args):
                         enable_progress_bar=True,
                         logger=logger,
                         log_every_n_steps=10,
-                        check_val_every_n_epoch=10,
-                        callbacks=[checkpoint_callback, earlystopping_callback])
-
+                        check_val_every_n_epoch=3,
+                        profiler='advanced',
+                        callbacks=[checkpoint_callback, earlystopping_callback, mymonitor, my_callback])
+    light_seg.configure_callbacks()
     # begin training
     print("beginning the training.")
     start = time.time()
@@ -199,7 +221,7 @@ def train_segmentation(args):
 
     # begin testing
     test_path = os.path.join(args.data_path, 'test/')
-    test_dataset = SegDataset(test_path, args.input_size, train=False)
+    test_dataset = SegDataset(test_path, 992, train=False)
     test_sampler = SequentialSampler(test_dataset)
     test_loader = DataLoader(dataset=test_dataset,
                              sampler=test_sampler,
