@@ -1,0 +1,25 @@
+[33mcommit 36651d8a598813b11d4b63ddefa0468ad0547b47[m[33m ([m[1;36mHEAD -> [m[1;32mpauline[m[33m)[m
+Author: pauline-drews <pauline.drews@stud.uni-goettingen.de>
+Date:   Tue Oct 8 09:57:08 2024 +0200
+
+    Just for fixing git
+
+[33mcommit a0107c3649cac22871bc736ef75f3c068ca0fa19[m
+Author: pauline-drews <pauline.drews@stud.uni-goettingen.de>
+Date:   Tue Oct 8 09:30:52 2024 +0200
+
+    Add .gitignore and stop tracking temp folder
+
+[33mcommit 439d58b4f03e517216da0e468473f8453bc46705[m
+Author: pauline-drews <pauline.drews@stud.uni-goettingen.de>
+Date:   Fri Oct 4 16:30:52 2024 +0200
+
+    added a new run_p.sh and ran with my data
+
+[33mcommit c1d8ea61bcf73fcd7e7e940b26b44b01475cb813[m[33m ([m[1;31morigin/pauline[m[33m)[m
+Author: pauline-drews <pauline.drews@stud.uni-goettingen.de>
+Date:   Wed Oct 2 17:43:45 2024 +0200
+
+    commented out geowebdataset and gdal stuft for pauline
+    added test_seg.sh for first model run
+    added args.yaml
