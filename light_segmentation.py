@@ -62,35 +62,9 @@ def get_args_parser_semseg():
                         help="""pass this if resuming training. False by default.""")
     parser.add_argument('--resume_ckpt', default='/path/to/resume/checkpoint/', type=str,
                         help='in case of resuming training. specify the path to the checkpoint.')
+    parser.add_argument('--exp_name', default="exp/", type=str,
+                        help='name of the experiment directory.')
     return parser
-
-
-class MyPrintingCallback(Callback):
-    def on_fit_start(self, trainer: "L.Trainer", pl_module: "L.LightningModule"):
-        print("fit starting")
-
-    def on_sanity_check_start(self, trainer, pl_module):
-        print("sanity checking")
-
-    def on_train_start(self, trainer, pl_module):
-        print("Training is starting")
-
-    def on_train_end(self, trainer, pl_module):
-        print("Training is ending")
-
-
-class FitCallback(Callback):
-    def setup(self, trainer, pl_module, stage: str) -> None:
-        print(f"Setting up {stage}")
-
-    def on_sanity_check_start(self, trainer, pl_module) -> None:
-        print("sanity checking")
-
-    def on_fit_start(self, trainer, pl_module) -> None:
-        print("fitting")
-
-    def on_train_start(self, trainer, pl_module) -> None:
-        print("train starting")
 
 
 class LitSeg(L.LightningModule):
@@ -114,8 +88,6 @@ class LitSeg(L.LightningModule):
             self.mIoU = JaccardIndex(task="multiclass", num_classes=self.num_classes)
         else:
             raise Exception("num_classes should be >0.")
-
-
         # other things
         self.batch_size = args.batch_size
         self.num_workers = args.num_workers
@@ -229,21 +201,20 @@ def train_segmentation(args):
     # val_dataset = SegDataMemBuffer(val_path, args.input_size, crop_overlap=0.4)
     val_dataset = SegDataset(val_path, crop_size=args.input_size)
 
+    # experiment directory
+    exp_dir = os.path.join(args.output_dir, args.exp_name)
     # lightning class
     light_seg = LitSeg(model, train_dataset, val_dataset, args)
     # logger and callbacks
     checkpoint_callback = ModelCheckpoint(dirpath=args.output_dir,
                                           every_n_epochs=int(args.max_epochs / 3),
                                           # every_n_train_steps=int(args.max_steps / 5),
+                                          enable_version_counter=False,
                                           save_last=True)
     earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=3)
-    my_callback = MyPrintingCallback()
-    mymonitor = DeviceStatsMonitor()
-    model_summary = ModelSummary(max_depth=-1)
-    fitcb = FitCallback()
-
-    logger = TensorBoardLogger(save_dir=args.output_dir,
+    logger = TensorBoardLogger(save_dir=exp_dir,
                                name="",
+                               version="",
                                default_hp_metric=False)
 
     # trainer
@@ -255,8 +226,7 @@ def train_segmentation(args):
                         log_every_n_steps=10,
                         check_val_every_n_epoch=10,
                         num_sanity_val_steps=0,
-                        callbacks=[fitcb,
-                                   checkpoint_callback,
+                        callbacks=[checkpoint_callback,
                                    earlystopping_callback,])
     # trainer = L.Trainer(fast_dev_run=True)
     # begin training
@@ -270,20 +240,21 @@ def train_segmentation(args):
     print(f"training completed. Elapsed time {end - start} seconds.")
 
     # begin testing
-    test_path = os.path.join(args.data_path, 'test')
-    test_dataset = SegDataset(test_path, 992, train=False)
-    test_sampler = SequentialSampler(test_dataset)
-    test_loader = DataLoader(dataset=test_dataset,
-                             sampler=test_sampler,
-                             batch_size=1,
-                             num_workers=args.num_workers,
-                             persistent_workers=True,
-                             pin_memory=True,
-                             drop_last=False, )
-    trainer.test(model=light_seg, dataloaders=test_loader)
+    # test_path = os.path.join(args.data_path, 'test')
+    # test_dataset = SegDataset(test_path, 992, train=False)
+    # test_sampler = SequentialSampler(test_dataset)
+    # test_loader = DataLoader(dataset=test_dataset,
+    #                          sampler=test_sampler,
+    #                          batch_size=1,
+    #                          num_workers=args.num_workers,
+    #                          persistent_workers=True,
+    #                          pin_memory=True,
+    #                          drop_last=False, )
+    # trainer.test(model=light_seg, dataloaders=test_loader)
 
     # writing stats from tensorboard logs to yml
-    event_to_yml(os.path.join(args.output_dir, "version_0"))
+    # event_to_yml(os.path.join(args.output_dir, "version_0"))
+    event_to_yml(exp_dir)
 
 
 if __name__ == '__main__':
