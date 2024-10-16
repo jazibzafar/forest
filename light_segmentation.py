@@ -212,7 +212,8 @@ def train_segmentation(args):
                                 reduce_dim=args.reduce_dim,
                                 n_heads=args.decoder_head_count,
                                 simple_decoder=args.simple_decoder,
-                                freeze_backbone=args.freeze_backbone)
+                                freeze_backbone=args.freeze_backbone,
+                                num_classes=args.num_classes)
 
     # build the dataset
     train_path = os.path.join(args.data_path, 'train')
