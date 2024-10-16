@@ -106,9 +106,15 @@ class LitSeg(L.LightningModule):
         self.val_sampler = SequentialSampler(self.val_dataset)
 
         self.lr = args.lr
-        self.loss = nn.BCEWithLogitsLoss()
-        self.mIoU = JaccardIndex(task="binary")
         self.num_classes = args.num_classes
+        self.loss = nn.BCEWithLogitsLoss()
+        if self.num_classes == 1:
+            self.mIoU = JaccardIndex(task="binary")
+        elif self.num_classes > 1:
+            self.mIoU = JaccardIndex(task="multiclass", num_classes=self.num_classes)
+        else:
+            raise Exception("num_classes should be >0.")
+
 
         # other things
         self.batch_size = args.batch_size
