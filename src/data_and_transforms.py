@@ -208,9 +208,10 @@ class SegDataMemBuffer(Dataset):
         super().__init__()
         self.tile_chans = tile_chans
         self.mask_chans = mask_chans
-        self.data_buffer = self.create_data_buffer(path, crop_size, crop_overlap, shuffle)
+        self.data_buffer = self.create_data_buffer(path, 256, crop_overlap, shuffle)
         self.tile_transform = tile_transform
-        self.common_transform = A.Compose([A.HorizontalFlip(p=0.3),  # 0.5
+        self.common_transform = A.Compose([A.RandomCrop(height=crop_size, width=crop_size, always_apply=True),
+                                           A.HorizontalFlip(p=0.3),  # 0.5
                                            A.RandomRotate90(p=0.1), ])   # 0.2
 
     @staticmethod

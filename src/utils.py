@@ -62,3 +62,12 @@ def bool_flag(s):
         return True
     else:
         raise argparse.ArgumentTypeError("invalid value for a boolean flag")
+
+
+def to_rgb(img_in, mode='CHW'):
+    if mode == 'CHW':
+        return img_in[:3, :, :]
+    elif mode == 'HWC':
+        return img_in[:, :, :3]
+    else:
+        print("mode = CHW or HWC")

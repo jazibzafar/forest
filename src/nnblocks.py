@@ -78,7 +78,7 @@ class ClipSegStyleDecoder(nn.Module):
                 nn.ReLU(),
                 nn.ConvTranspose2d(reduce_dim, reduce_dim // 2, kernel_size=tp_kernels[0], stride=tp_kernels[0]),
                 nn.ReLU(),
-                nn.ConvTranspose2d(reduce_dim // 2, 1, kernel_size=tp_kernels[1], stride=tp_kernels[1]),
+                nn.ConvTranspose2d(reduce_dim // 2, num_classes, kernel_size=tp_kernels[1], stride=tp_kernels[1]),
             )
 
         if freeze_backbone:
