@@ -15,6 +15,8 @@ from lightning.pytorch.callbacks import ModelCheckpoint, DeviceStatsMonitor
 from lightning.pytorch.callbacks import Callback
 import os
 import argparse
+from lightning.pytorch.callbacks import ModelSummary
+import logging
 
 
 def get_args_parser_semseg():
@@ -34,13 +36,14 @@ def get_args_parser_semseg():
                         help="""Please specify path to the training data.""")
     parser.add_argument('--input_size', default=224, type=int,
                         help="""size of the input to the network. should be divisible by 16. """)
+    parser.add_argument('--num_classes', default=1, type=int,
+                        help="""size of the input to the network. should be divisible by 16. """)
     # TODO: when adding more decoders below used the arch style input. see above.
     parser.add_argument('--simple_decoder', action='store_true',
                         help="""by default complex clip seg decoder is used. pass this if simple
                         decoder should be used instead""")
     parser.add_argument('--freeze_backbone', action='store_true',
-                        help="""backbone frozen by default (only decoder is trained). Pass
-                        this to train the entire network instead.""")
+                        help="""Pass this to freeze the backbone and train just the decoder.""")
     parser.add_argument('--reduce_dim', default=112, type=int,
                         help="""decoder reduces the dim of the input to this size.""")
     parser.add_argument('--decoder_head_count', default=4, type=int,
@@ -63,7 +66,10 @@ def get_args_parser_semseg():
 
 
 class MyPrintingCallback(Callback):
-    def on_sanity_check_start(self, trainer, pl_module) -> None:
+    def on_fit_start(self, trainer: "L.Trainer", pl_module: "L.LightningModule"):
+        print("fit starting")
+
+    def on_sanity_check_start(self, trainer, pl_module):
         print("sanity checking")
 
     def on_train_start(self, trainer, pl_module):
@@ -71,6 +77,20 @@ class MyPrintingCallback(Callback):
 
     def on_train_end(self, trainer, pl_module):
         print("Training is ending")
+
+
+class FitCallback(Callback):
+    def setup(self, trainer, pl_module, stage: str) -> None:
+        print(f"Setting up {stage}")
+
+    def on_sanity_check_start(self, trainer, pl_module) -> None:
+        print("sanity checking")
+
+    def on_fit_start(self, trainer, pl_module) -> None:
+        print("fitting")
+
+    def on_train_start(self, trainer, pl_module) -> None:
+        print("train starting")
 
 
 class LitSeg(L.LightningModule):
@@ -88,10 +108,18 @@ class LitSeg(L.LightningModule):
         self.lr = args.lr
         self.loss = nn.BCEWithLogitsLoss()
         self.mIoU = JaccardIndex(task="binary")
+        self.num_classes = args.num_classes
 
         # other things
         self.batch_size = args.batch_size
         self.num_workers = args.num_workers
+
+    @staticmethod
+    def multichannel_output_to_mask(img):
+        softmax = torch.nn.Softmax(dim=1)
+        img = softmax(img)
+        mask = torch.argmax(img, dim=1)
+        return mask
 
     def configure_optimizers(self):
         regularized, not_regularized = [], []
@@ -116,6 +144,7 @@ class LitSeg(L.LightningModule):
                           num_workers=self.num_workers,
                           batch_size=self.batch_size,
                           pin_memory=True,
+                          persistent_workers=True,
                           shuffle=True,
                           drop_last=True, )
 
@@ -125,24 +154,29 @@ class LitSeg(L.LightningModule):
                           batch_size=self.batch_size,
                           num_workers=self.num_workers,
                           pin_memory=True,
+                          persistent_workers=True,
                           drop_last=False,)
 
     def training_step(self, batch, batch_idx):
         samples = batch[0]
-        targets = batch[1]
+        targets = batch[1].squeeze()
         # targets = targets.permute((0, 3, 1, 2))
-        output = self.model(samples)
-        output = torch.squeeze(output, 1)
+        output = self.model(samples).squeeze()
+        # output = torch.squeeze(output, 1)
+        if self.num_classes > 1:
+            output = self.multichannel_output_to_mask(output)
         loss = self.loss(output, targets)
         self.log('train/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         samples = batch[0]
-        targets = batch[1]
+        targets = batch[1].squeeze()
         # targets = targets.permute((0, 3, 1, 2))
-        output = self.model(samples)
-        output = torch.squeeze(output, 1)
+        output = self.model(samples).squeeze()
+        # output = torch.squeeze(output, 1)
+        if self.num_classes > 1:
+            output = self.multichannel_output_to_mask(output)
         loss = self.loss(output, targets)
         iou = self.mIoU(output, targets)
         self.log('val/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
@@ -160,6 +194,8 @@ class LitSeg(L.LightningModule):
                                    augmentation=True)
         output = pred["prediction"]
         output = torch.Tensor(output).squeeze(0).to(self.device)
+        if self.num_classes > 1:
+            output = self.multichannel_output_to_mask(output)
         targets = torch.Tensor(targets).to(self.device)
         loss = self.loss(output, targets)
         iou = self.mIoU(output, targets)
@@ -179,10 +215,12 @@ def train_segmentation(args):
                                 freeze_backbone=args.freeze_backbone)
 
     # build the dataset
-    train_path = os.path.join(args.data_path, 'train/')
-    train_dataset = SegDataMemBuffer(train_path, args.input_size, crop_overlap=0.4)
-    val_path = os.path.join(args.data_path, 'val/')
-    val_dataset = SegDataMemBuffer(val_path, args.input_size, crop_overlap=0.4)
+    train_path = os.path.join(args.data_path, 'train')
+    # train_dataset = SegDataMemBuffer(train_path, args.input_size, crop_overlap=0.4)
+    train_dataset = SegDataset(train_path, crop_size=args.input_size)
+    val_path = os.path.join(args.data_path, 'val')
+    # val_dataset = SegDataMemBuffer(val_path, args.input_size, crop_overlap=0.4)
+    val_dataset = SegDataset(val_path, crop_size=args.input_size)
 
     # lightning class
     light_seg = LitSeg(model, train_dataset, val_dataset, args)
@@ -191,9 +229,12 @@ def train_segmentation(args):
                                           every_n_epochs=int(args.max_epochs / 3),
                                           # every_n_train_steps=int(args.max_steps / 5),
                                           save_last=True)
-    earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=5)
+    earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=3)
     my_callback = MyPrintingCallback()
     mymonitor = DeviceStatsMonitor()
+    model_summary = ModelSummary(max_depth=-1)
+    fitcb = FitCallback()
+
     logger = TensorBoardLogger(save_dir=args.output_dir,
                                name="",
                                default_hp_metric=False)
@@ -205,10 +246,12 @@ def train_segmentation(args):
                         enable_progress_bar=True,
                         logger=logger,
                         log_every_n_steps=10,
-                        check_val_every_n_epoch=3,
-                        profiler='advanced',
-                        callbacks=[checkpoint_callback, earlystopping_callback, mymonitor, my_callback])
-    light_seg.configure_callbacks()
+                        check_val_every_n_epoch=10,
+                        num_sanity_val_steps=0,
+                        callbacks=[fitcb,
+                                   checkpoint_callback,
+                                   earlystopping_callback,])
+    # trainer = L.Trainer(fast_dev_run=True)
     # begin training
     print("beginning the training.")
     start = time.time()
@@ -220,12 +263,12 @@ def train_segmentation(args):
     print(f"training completed. Elapsed time {end - start} seconds.")
 
     # begin testing
-    test_path = os.path.join(args.data_path, 'test/')
+    test_path = os.path.join(args.data_path, 'test')
     test_dataset = SegDataset(test_path, 992, train=False)
     test_sampler = SequentialSampler(test_dataset)
     test_loader = DataLoader(dataset=test_dataset,
                              sampler=test_sampler,
-                             batch_size=args.batch_size,
+                             batch_size=1,
                              num_workers=args.num_workers,
                              persistent_workers=True,
                              pin_memory=True,

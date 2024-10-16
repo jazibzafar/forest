@@ -116,10 +116,12 @@ def train_unet(args):
     checkpoint = load_dino_checkpoint(args.checkpoint_path, args.checkpoint_key)
     backbone = prepare_resnet(args.arch, checkpoint, args.num_chans)
     if args.freeze_backbone:
-        backbone.eval()
+        for p in backbone.parameters():
+            p.requires_grad_(False)
         print("backbone frozen.")
     else:
-        backbone.train()
+        for p in backbone.parameters():
+            p.requires_grad_(True)
         print("backbone training.")
 
     model = smp.Unet(encoder_name=args.arch,
