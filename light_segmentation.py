@@ -4,7 +4,7 @@ import torch.nn as nn
 import time
 import torch
 import lightning as L
-from src.checkpoints import load_dino_checkpoint, prepare_vit
+from src.checkpoints import load_dino_checkpoint, prepare_vit, prepare_arch
 from torchmetrics import JaccardIndex
 from src.nnblocks import ClipSegStyleDecoder
 from src.predict_on_array import predict_on_array_cf
@@ -81,7 +81,7 @@ class LitSeg(L.LightningModule):
 
         self.lr = args.lr
         self.num_classes = args.num_classes
-        self.loss = nn.BCEWithLogitsLoss()
+        self.loss = nn.MSELoss()
         if self.num_classes == 1:
             self.mIoU = JaccardIndex(task="binary")
         elif self.num_classes > 1:
@@ -164,7 +164,7 @@ class LitSeg(L.LightningModule):
         sample = batch[0].squeeze(0).cpu().numpy()
         targets = batch[1].squeeze(0).cpu().numpy()
         pred = predict_on_array_cf(self.model.eval(), sample,
-                                   in_shape=(4, 992, 992),
+                                   in_shape=(4, 320, 320),
                                    out_bands=args.num_classes,
                                    drop_border=0,
                                    stride=26,
@@ -184,7 +184,7 @@ class LitSeg(L.LightningModule):
 def train_segmentation(args):
     # create the model
     checkpoint = load_dino_checkpoint(args.checkpoint_path, args.checkpoint_key)
-    model_backbone = prepare_vit(args.arch, checkpoint, args.patch_size)
+    model_backbone = prepare_arch(args.arch, checkpoint, args.patch_size)
     model = ClipSegStyleDecoder(backbone=model_backbone,
                                 patch_size=args.patch_size,
                                 reduce_dim=args.reduce_dim,
@@ -226,6 +226,7 @@ def train_segmentation(args):
                         log_every_n_steps=10,
                         check_val_every_n_epoch=10,
                         num_sanity_val_steps=0,
+                        precision="bf16-mixed",
                         callbacks=[checkpoint_callback,
                                    earlystopping_callback,])
     # trainer = L.Trainer(fast_dev_run=True)
@@ -240,20 +241,20 @@ def train_segmentation(args):
     print(f"training completed. Elapsed time {end - start} seconds.")
 
     # begin testing
-    # test_path = os.path.join(args.data_path, 'test')
-    # test_dataset = SegDataset(test_path, 992, train=False)
-    # test_sampler = SequentialSampler(test_dataset)
-    # test_loader = DataLoader(dataset=test_dataset,
-    #                          sampler=test_sampler,
-    #                          batch_size=1,
-    #                          num_workers=args.num_workers,
-    #                          persistent_workers=True,
-    #                          pin_memory=True,
-    #                          drop_last=False, )
-    # trainer.test(model=light_seg, dataloaders=test_loader)
+    test_path = os.path.join(args.data_path, 'test')
+    test_dataset = SegDataset(test_path, 320, train=False)
+    test_sampler = SequentialSampler(test_dataset)
+    test_loader = DataLoader(dataset=test_dataset,
+                             sampler=test_sampler,
+                             batch_size=1,
+                             num_workers=args.num_workers,
+                             persistent_workers=True,
+                             pin_memory=True,
+                             drop_last=False, )
+    trainer.test(model=light_seg, dataloaders=test_loader)
 
     # writing stats from tensorboard logs to yml
-    # event_to_yml(os.path.join(args.output_dir, "version_0"))
+    event_to_yml(os.path.join(args.output_dir, "version_0"))
     event_to_yml(exp_dir)
 
 
