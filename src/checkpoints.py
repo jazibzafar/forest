@@ -76,7 +76,7 @@ def prepare_vit(arch, pretrained_model, patch_size, num_chans=4):
 def prepare_arch(arch, pretrained_model, patch_size, num_chans=4):
     model = vits.__dict__[arch](patch_size=patch_size, num_classes=0, in_chans=num_chans)
     msg = model.load_state_dict(pretrained_model, strict=False)
-    print(msg)
+    print("prepare_arch: ", msg)
     return model
 
 

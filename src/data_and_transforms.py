@@ -196,9 +196,11 @@ class SegDataset(Dataset):
         t_tile = t_stacked[:, :, 0:4]
         t_mask = t_stacked[:, :, 4]
         # # convert tile and mask to torch.Tensor
-        # t_tile = torch.Tensor(t_tile)
         t_tile = ToTensor()(t_tile)
         t_mask = torch.Tensor(t_mask)
+        #print("SegDataset __getiitm__ products: ")
+        #print("t_tile size: ", t_tile.size())
+        #print("t_mask size: ", t_mask.size())
         return t_tile, t_mask
 
 

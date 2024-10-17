@@ -17,6 +17,7 @@ import os
 import argparse
 from lightning.pytorch.callbacks import ModelSummary
 import logging
+from torch.autograd import Variable
 
 
 def get_args_parser_semseg():
@@ -100,6 +101,7 @@ class LitSeg(L.LightningModule):
         return mask
 
     def configure_optimizers(self):
+        print("configure_optimizers started running")
         regularized, not_regularized = [], []
         for n, p in self.model.named_parameters():
             if not p.requires_grad:
@@ -136,15 +138,22 @@ class LitSeg(L.LightningModule):
                           drop_last=False,)
 
     def training_step(self, batch, batch_idx):
+        print("training_step running with batch type = ", type(batch))
         samples = batch[0]
+        print("training step running with samples tensor size = ", samples.size())
         targets = batch[1].squeeze()
+        print("training step running with targets tensor size = ", targets.size())
         # targets = targets.permute((0, 3, 1, 2))
         output = self.model(samples).squeeze()
+        print("training_step running with output type and size = ", type(output), " and ", output.size())
         # output = torch.squeeze(output, 1)
         if self.num_classes > 1:
             output = self.multichannel_output_to_mask(output)
+            print("training_step running with multi-class output type and size = ", type(output), " and ", output.size())
         loss = self.loss(output, targets)
-        self.log('train/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
+        loss = Variable(loss, requires_grad=True)
+        print("training_step running with loss = ", loss)
+        self.log('train/loss', loss, prog_bar=True, on_step=False, on_epoch=True) # log inherited from LightningModule
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -236,7 +245,7 @@ def train_segmentation(args):
     if args.resume:
         trainer.fit(model=light_seg, ckpt_path=args.resume_ckpt)
     else:
-        trainer.fit(model=light_seg)
+        trainer.fit(model=light_seg) # invisible arguments here: train_dataloader and val_dataloader
     end = time.time()
     print(f"training completed. Elapsed time {end - start} seconds.")
 
