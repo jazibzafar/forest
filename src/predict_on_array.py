@@ -56,7 +56,9 @@ def predict_on_array_cf(model,
                         augmentation=False,
                         no_data=None,
                         verbose=False,
-                        aggregate_metric=False):
+                        aggregate_metric=False,
+                        network_input_dtype=torch.float32
+                        ):
     """
     Applies a pytorch segmentation model to an array in a strided manner.
 
@@ -80,9 +82,9 @@ def predict_on_array_cf(model,
     Returns:
         A dict containing result, time, nodata_region and time
     """
+
     t0 = time.time()
     metric = 0
-
     if augmentation:
         operations = (lambda x: x,
                       lambda x: np.rot90(x, 1, axes=(1, 2)),
@@ -164,6 +166,7 @@ def predict_on_array_cf(model,
                 for x in x_range:
                     yield img[:, y:y + in_size, x:x + in_size]
 
+
         patch_gen = patch_generator()
 
         y = 0
@@ -184,13 +187,13 @@ def predict_on_array_cf(model,
                 batch[j] = next(patch_gen)
 
             with torch.no_grad():
-                prediction = model(torch.from_numpy(batch).to(device=device, dtype=torch.float32))
+                prediction = model(torch.from_numpy(batch).to(device=device, dtype=network_input_dtype))
                 # prediction = torch.ones(1, 224, 224, device=device)
                 if aggregate_metric:
-                    metric += prediction[1].cpu().numpy()
-                    prediction = prediction[0]
+                    metric += prediction[1].to(torch.float32).cpu().numpy()
+                    prediction = prediction[0].to(torch.float32)
 
-                prediction = prediction.detach().cpu().numpy()
+                prediction = prediction.detach().to(torch.float32).cpu().numpy()
             if drop_border > 0:
                 prediction = prediction[:, :, drop_border:-drop_border, drop_border:-drop_border]
 
