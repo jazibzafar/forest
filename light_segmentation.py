@@ -65,6 +65,7 @@ def get_args_parser_semseg():
                         help='in case of resuming training. specify the path to the checkpoint.')
     parser.add_argument('--exp_name', default="exp/", type=str,
                         help='name of the experiment directory.')
+    parser.add_argument("--device", default="cpu", type=str)
     return parser
 
 
@@ -138,21 +139,15 @@ class LitSeg(L.LightningModule):
                           drop_last=False,)
 
     def training_step(self, batch, batch_idx):
-        print("training_step running with batch type = ", type(batch))
         samples = batch[0]
-        print("training step running with samples tensor size = ", samples.size())
         targets = batch[1].squeeze()
-        print("training step running with targets tensor size = ", targets.size())
         # targets = targets.permute((0, 3, 1, 2))
         output = self.model(samples).squeeze()
-        print("training_step running with output type and size = ", type(output), " and ", output.size())
         # output = torch.squeeze(output, 1)
         if self.num_classes > 1:
             output = self.multichannel_output_to_mask(output)
-            print("training_step running with multi-class output type and size = ", type(output), " and ", output.size())
         loss = self.loss(output, targets)
         loss = Variable(loss, requires_grad=True)
-        print("training_step running with loss = ", loss)
         self.log('train/loss', loss, prog_bar=True, on_step=False, on_epoch=True) # log inherited from LightningModule
         return loss
 
@@ -168,19 +163,42 @@ class LitSeg(L.LightningModule):
         iou = self.mIoU(output, targets)
         self.log('val/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
         self.log('val/mIoU', iou, prog_bar=True, on_step=False, on_epoch=True)
+    #
+    # def test_step(self, batch, batch_idx):
+    #     sample = batch[0].squeeze(0).cpu().numpy()
+    #     targets = batch[1].squeeze(0).cpu().numpy()
+    #     pred = predict_on_array_cf(self.model.eval(), sample,
+    #                                in_shape=(4, 320, 320),
+    #                                out_bands=args.num_classes,
+    #                                drop_border=0,
+    #                                stride=26,
+    #                                batchsize=1,
+    #                                augmentation=True)
+    #     output = pred["prediction"]
+    #     output = torch.Tensor(output).squeeze(0).to(self.device)
+    #     if self.num_classes > 1:
+    #         output = self.multichannel_output_to_mask(output)
+    #     targets = torch.Tensor(targets).to(self.device)
+    #     loss = self.loss(output, targets)
+    #     iou = self.mIoU(output, targets)
+    #     self.log('test/loss', loss, True)
+    #     self.log('test/mIoU', iou, True)
 
     def test_step(self, batch, batch_idx):
         sample = batch[0].squeeze(0).cpu().numpy()
-        targets = batch[1].squeeze(0).cpu().numpy()
+        targets = batch[1].cpu().numpy()
         pred = predict_on_array_cf(self.model.eval(), sample,
                                    in_shape=(4, 320, 320),
-                                   out_bands=args.num_classes,
+                                   out_bands=self.args.num_classes,
                                    drop_border=0,
                                    stride=26,
                                    batchsize=1,
-                                   augmentation=True)
+                                   augmentation=True,
+                                   device=self.device,
+                                   network_input_dtype=torch.bfloat16)
         output = pred["prediction"]
-        output = torch.Tensor(output).squeeze(0).to(self.device)
+        output = torch.Tensor(output).to(self.device)
+        output = output.unsqueeze(0)
         if self.num_classes > 1:
             output = self.multichannel_output_to_mask(output)
         targets = torch.Tensor(targets).to(self.device)
@@ -227,7 +245,7 @@ def train_segmentation(args):
                                default_hp_metric=False)
 
     # trainer
-    trainer = L.Trainer(accelerator='gpu',
+    trainer = L.Trainer(accelerator=args.device,
                         max_epochs=args.max_epochs,
                         default_root_dir=args.output_dir,
                         enable_progress_bar=True,
@@ -236,6 +254,7 @@ def train_segmentation(args):
                         check_val_every_n_epoch=10,
                         num_sanity_val_steps=0,
                         precision="bf16-mixed",
+                        #fast_dev_run=True, # run with just one epoch for fast development
                         callbacks=[checkpoint_callback,
                                    earlystopping_callback,])
     # trainer = L.Trainer(fast_dev_run=True)
@@ -263,12 +282,34 @@ def train_segmentation(args):
     trainer.test(model=light_seg, dataloaders=test_loader)
 
     # writing stats from tensorboard logs to yml
-    event_to_yml(os.path.join(args.output_dir, "version_0"))
     event_to_yml(exp_dir)
 
 
+ARCH='vit_small'
+CKPT_PATH='/data_hdd/jazibmodels/dino_vit-s_32_500k_randonly/epoch=6-step=500000.ckpt'
+CKPT_KEY='teacher'
+DATA_PATH='/data_hdd/pauline/dataset/'
+INPUT_SIZE=320
+OUTPUT_DIR="./test/"
+MAX_EPOCHS=10
+NUM_CLASSES=4
+EXP_NAME="first/"
+DEV="gpu"
+
 if __name__ == '__main__':
-    args = get_args_parser_semseg().parse_args()
+    # args = get_args_parser_semseg().parse_args()
+    args = get_args_parser_semseg().parse_args(f"--arch {ARCH} "
+                                               f"--checkpoint_path {CKPT_PATH} "
+                                               f"--checkpoint_key {CKPT_KEY} "
+                                               f"--data_path {DATA_PATH} "
+                                               f"--freeze_backbone "
+                                               f"--input_size {INPUT_SIZE} "
+                                               f"--num_classes {NUM_CLASSES} "
+                                               f"--output_dir {OUTPUT_DIR} "
+                                               f"--max_epochs {MAX_EPOCHS} "
+                                               f"--device {DEV} "
+                                               f"--exp_name {EXP_NAME}".split()
+                                               )
     # write args to a yml file in output dir
     args_yml_fp = os.path.join(args.output_dir, "args.yaml")
     write_dict_to_yaml(args_yml_fp, args.__dict__)

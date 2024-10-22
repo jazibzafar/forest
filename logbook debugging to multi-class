@@ -1,0 +1,174 @@
+2024/10/22
+
+- 1st problem:
+  - running epochs 0-8 to 95% and epoch 9 to 100%
+  - then error:
+
+    Epoch 9: 100%|██████████| 20/20 [00:04<00:00,  4.91it/s, train/loss=2.390]
+/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/trainer/connectors/logger_connector/result.py:431: It is recommended to use `self.log('val/loss', ..., sync_dist=True)` when logging on epoch level in distributed setting to accumulate the metric across devices.
+/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/trainer/connectors/logger_connector/result.py:431: It is recommended to use `self.log('val/mIoU', ..., sync_dist=True)` when logging on epoch level in distributed setting to accumulate the metric across devices.
+`Trainer.fit` stopped: `max_epochs=10` reached.00:01<00:00,  4.17it/s]
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0,1]
+SLURM auto-requeueing enabled. Setting signal handlers.
+/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/trainer/connectors/data_connector.py:215: Using `DistributedSampler` with the dataloaders. During `trainer.test()`, it is recommended to use `Trainer(devices=1, num_nodes=1)` to ensure each sample/batch gets evaluated exactly onc
+Epoch 9: 100%|██████████| 20/20 [00:06<00:00,  3.22it/s, train/loss=2.380, val/loss=2.390, val/mIoU=0.169] devices have same batch size in case of uneven inputs.
+training completed. Elapsed time 44.49743103981018 seconds.
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/home/pauline/PycharmProjects/forest/light_segmentation.py", line 275, in <module>
+[rank0]:     train_segmentation(args)
+[rank0]:   File "/home/pauline/PycharmProjects/forest/light_segmentation.py", line 263, in train_segmentation
+[rank0]:     trainer.test(model=light_seg, dataloaders=test_loader)
+[rank0]:   File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/trainer/trainer.py", line 748, in test
+[rank0]:     return call._call_and_handle_interrupt(
+[rank0]:   File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/trainer/call.py", line 46, in _call_and_handle_interrupt
+[rank0]:     return trainer.strategy.launcher.launch(trainer_fn, *args, trainer=trainer, **kwargs)
+[rank0]:   File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/strategies/launchers/subprocess_script.py", line 105, in launch
+[rank0]:     return function(*args, **kwargs)
+[rank0]:   File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/trainer/trainer.py", line 788, in _test_impl
+[rank0]:     results = self._run(model, ckpt_path=ckpt_path)
+[rank0]:   File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/trainer/trainer.py", line 981, in _run
+[rank0]:     results = self._run_stage()
+[rank0]:   File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/trainer/trainer.py", line 1018, in _run_stage
+[rank0]:     return self._evaluation_loop.run()
+[rank0]:   File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/loops/utilities.py", line 178, in _decorator
+[rank0]:     return loop_run(self, *args, **kwargs)
+[rank0]:   File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/loops/evaluation_loop.py", line 135, in run
+[rank0]:     self._evaluation_step(batch, batch_idx, dataloader_idx, dataloader_iter)
+[rank0]:   File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/loops/evaluation_loop.py", line 396, in _evaluation_step
+[rank0]:     output = call._call_strategy_hook(trainer, hook_name, *step_args)
+[rank0]:   File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/trainer/call.py", line 319, in _call_strategy_hook
+[rank0]:     output = fn(*args, **kwargs)
+[rank0]:   File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/strategies/strategy.py", line 424, in test_step
+[rank0]:     return self.lightning_module.test_step(*args, **kwargs)
+[rank0]:   File "/home/pauline/PycharmProjects/forest/light_segmentation.py", line 175, in test_step
+[rank0]:     pred = predict_on_array_cf(self.model.eval(), sample,
+[rank0]:   File "/home/pauline/PycharmProjects/forest/src/predict_on_array.py", line 193, in predict_on_array_cf
+[rank0]:     prediction = prediction.detach().cpu().numpy()
+[rank0]: TypeError: Got unsupported ScalarType BFloat16
+Testing DataLoader 0:   0%|          | 0/141 [00:01<?, ?it/s]srun: error: node4: task 0: Exited with exit code 1
+
+  - tried to solve by adding type change to the test_step function:
+
+  # Cast the output tensor to float32 if it's in BFloat16
+        if output.dtype == torch.bfloat16:
+            output = output.to(torch.float32)
+
+  - error still occurs
+  - adding print statements to the test_step function to locate error:
+
+      def test_step(self, batch, batch_idx):
+        print("test_step started runnning.")
+        sample = batch[0].squeeze(0).cpu().numpy()
+        print("test_step runnning sample.")
+        targets = batch[1].squeeze(0).cpu().numpy()
+        print("test_step runnning targets.")
+        pred = predict_on_array_cf(self.model.eval(), sample,
+                                   in_shape=(4, 320, 320),
+                                   out_bands=self.args.num_classes,
+                                   drop_border=0,
+                                   stride=26,
+                                   batchsize=1,
+                                   augmentation=True)
+        print("test_step runnning pred.")
+        output = pred["prediction"]
+        print("test_step runnning output 1.")
+        output = torch.Tensor(output).squeeze(0).to(self.device)
+        print("test_step runnning output 2.")
+        if self.num_classes > 1:
+            output = self.multichannel_output_to_mask(output)
+            print("test_step runnning multi-channel-to-mask.")
+        targets = torch.Tensor(targets).to(self.device)
+        print("test_step runnning targets.")
+        loss = self.loss(output, targets)
+        print("test_step runnning loss.")
+        iou = self.mIoU(output, targets)
+        print("test_step runnning mOoU.")
+        self.log('test/loss', loss, True)
+        print("test_step runnning self log 1.")
+        self.log('test/mIoU', iou, True)
+        print("test_step runnning self log 2.")
+        print("test_step finished.")
+
+  - error located in:
+
+  pred = predict_on_array_cf(self.model.eval(), sample,
+                                   in_shape=(4, 320, 320),
+                                   out_bands=self.args.num_classes,
+                                   drop_border=0,
+                                   stride=26,
+                                   batchsize=1,
+                                   augmentation=True)
+
+  - checking type of sample: <class 'numpy.ndarray'>
+  - checking dtype of sample: float32 (so not the problematic dtype)
+  - adding print statements to the predict_on_array function to locate error
+  - stopped within first for loop
+  - add detailed print statements within for loop to locate error
+  - Max helped to fiond error and solved  through addding network_input_dtype=torch.bfloat16 arguement to predict_on_array_cf in test_step
+  - Some other adjustments with Max's help:
+    - add argument: parser.add_argument("--device", default="cpu", type=str): better error messages when using cpu
+    -
+  - new error:
+
+  /home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/torch/nn/modules/loss.py:538: UserWarning: Using a target size (torch.Size([320, 320])) that is different to the input size (torch.Size([4, 320])). This will likely lead to incorrect results due to broadcasting. Please ensure they have the same size.
+  return F.mse_loss(input, target, reduction=self.reduction)
+Traceback (most recent call last):
+  File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/trainer/call.py", line 47, in _call_and_handle_interrupt
+    return trainer_fn(*args, **kwargs)
+  File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/trainer/trainer.py", line 788, in _test_impl
+    results = self._run(model, ckpt_path=ckpt_path)
+  File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/trainer/trainer.py", line 981, in _run
+    results = self._run_stage()
+  File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/trainer/trainer.py", line 1018, in _run_stage
+    return self._evaluation_loop.run()
+  File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/loops/utilities.py", line 178, in _decorator
+    return loop_run(self, *args, **kwargs)
+  File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/loops/evaluation_loop.py", line 135, in run
+    self._evaluation_step(batch, batch_idx, dataloader_idx, dataloader_iter)
+  File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/loops/evaluation_loop.py", line 396, in _evaluation_step
+    output = call._call_strategy_hook(trainer, hook_name, *step_args)
+  File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/trainer/call.py", line 319, in _call_strategy_hook
+    output = fn(*args, **kwargs)
+  File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/lightning/pytorch/strategies/strategy.py", line 424, in test_step
+    return self.lightning_module.test_step(*args, **kwargs)
+  File "/home/pauline/PycharmProjects/forest/light_segmentation.py", line 226, in test_step
+    loss = self.loss(output, targets)
+  File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1553, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1562, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/torch/nn/modules/loss.py", line 538, in forward
+    return F.mse_loss(input, target, reduction=self.reduction)
+  File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/torch/nn/functional.py", line 3383, in mse_loss
+    expanded_input, expanded_target = torch.broadcast_tensors(input, target)
+  File "/home/pauline/.conda/envs/forestforest/lib/python3.10/site-packages/torch/functional.py", line 77, in broadcast_tensors
+    return _VF.broadcast_tensors(tensors)  # type: ignore[attr-defined]
+RuntimeError: The size of tensor a (4) must match the size of tensor b (320) at non-singleton dimension 0
+python-BaseException
+Backend tkagg is interactive backend. Turning interactive mode on.
+
+  - reason: shape of output tensor in test_step not correct:
+    output shape of test_step before calling multichannel_output_to_mask:  torch.Size([4, 320, 320])
+    output shape of test_step after calling multichannel_output_to_mask:  torch.Size([4, 320])
+    - should be:
+    torch.Size([1, 4, 320, 320]) and torch.Size([1, 320, 320])
+    - added first dimension to target and output in test_step
+  - new error:
+
+  Traceback (most recent call last):
+  File "/cm/shared/apps/pycharm/2021-2-2/plugins/python-ce/helpers/pydev/pydevd.py", line 1483, in _exec
+    pydev_imports.execfile(file, globals, locals)  # execute the script
+  File "/cm/shared/apps/pycharm/2021-2-2/plugins/python-ce/helpers/pydev/_pydev_imps/_pydev_execfile.py", line 18, in execfile
+    exec(compile(contents+"\n", file, 'exec'), glob, loc)
+  File "/home/pauline/PycharmProjects/forest/light_segmentation.py", line 316, in <module>
+    train_segmentation(args)
+  File "/home/pauline/PycharmProjects/forest/light_segmentation.py", line 287, in train_segmentation
+    event_to_yml(exp_dir)
+  File "/home/pauline/PycharmProjects/forest/src/utils.py", line 45, in event_to_yml
+    for dname in os.listdir(path):
+FileNotFoundError: [Errno 2] No such file or directory: './temp/first/'
+
+  - reason: some issues with the paths
+  - solved by generalizing output paths
+  - FINAL TODAY: running, but stats don't really look good.
+
