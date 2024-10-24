@@ -2,11 +2,11 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="d3e89942-bae4-4107-adbd-6fa5c571c69f" name="Changes" comment="test commit">
-      <change afterPath="$PROJECT_DIR$/logbook debugging to multi-class" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/light_segmentation.py" beforeDir="false" afterPath="$PROJECT_DIR$/light_segmentation.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/logbook debugging to multi-class" beforeDir="false" afterPath="$PROJECT_DIR$/logbook debugging to multi-class" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/run_p.sh" beforeDir="false" afterPath="$PROJECT_DIR$/run_p.sh" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/predict_on_array.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/predict_on_array.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/nnblocks.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/nnblocks.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

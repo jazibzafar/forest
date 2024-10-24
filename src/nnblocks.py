@@ -63,6 +63,7 @@ class ClipSegStyleDecoder(nn.Module):
         super().__init__()
         self.backbone = backbone
         self.extract_layers = extract_layers
+        self.num_classes = num_classes
         # decoder modules
         depth = len(self.extract_layers)
         trans_conv_ks = (patch_size, patch_size)
@@ -70,7 +71,7 @@ class ClipSegStyleDecoder(nn.Module):
         self.blocks = nn.ModuleList(
             [nn.TransformerEncoderLayer(d_model=reduce_dim, nhead=n_heads) for _ in range(len(extract_layers))])
         if simple_decoder:
-            self.trans_conv = nn.ConvTranspose2d(reduce_dim, num_classes, trans_conv_ks, stride=trans_conv_ks)
+            self.trans_conv = nn.ConvTranspose2d(reduce_dim, self.num_classes, trans_conv_ks, stride=trans_conv_ks)
         else:
             tp_kernels = (trans_conv_ks[0] // 4, trans_conv_ks[0] // 4)
             self.trans_conv = nn.Sequential(
@@ -78,7 +79,7 @@ class ClipSegStyleDecoder(nn.Module):
                 nn.ReLU(),
                 nn.ConvTranspose2d(reduce_dim, reduce_dim // 2, kernel_size=tp_kernels[0], stride=tp_kernels[0]),
                 nn.ReLU(),
-                nn.ConvTranspose2d(reduce_dim // 2, num_classes, kernel_size=tp_kernels[1], stride=tp_kernels[1]),
+                nn.ConvTranspose2d(reduce_dim // 2, self.num_classes, kernel_size=tp_kernels[1], stride=tp_kernels[1]),
             )
 
         if freeze_backbone:
@@ -106,6 +107,9 @@ class ClipSegStyleDecoder(nn.Module):
         size = int(math.sqrt(a.shape[2]))
         a = a.view(bs, a.shape[1], size, size)
         a = self.trans_conv(a)
+        if self.num_classes > 1:
+            a = nn.Softmax(dim=1)(a)
+            a = torch.argmax(a, dim=1)
         return a
 
 

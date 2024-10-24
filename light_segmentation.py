@@ -102,7 +102,6 @@ class LitSeg(L.LightningModule):
         return mask
 
     def configure_optimizers(self):
-        print("configure_optimizers started running")
         regularized, not_regularized = [], []
         for n, p in self.model.named_parameters():
             if not p.requires_grad:
@@ -144,8 +143,8 @@ class LitSeg(L.LightningModule):
         # targets = targets.permute((0, 3, 1, 2))
         output = self.model(samples).squeeze()
         # output = torch.squeeze(output, 1)
-        if self.num_classes > 1:
-            output = self.multichannel_output_to_mask(output)
+        # if self.num_classes > 1:
+        #     output = self.multichannel_output_to_mask(output)
         loss = self.loss(output, targets)
         loss = Variable(loss, requires_grad=True)
         self.log('train/loss', loss, prog_bar=True, on_step=False, on_epoch=True) # log inherited from LightningModule
@@ -157,8 +156,8 @@ class LitSeg(L.LightningModule):
         # targets = targets.permute((0, 3, 1, 2))
         output = self.model(samples).squeeze()
         # output = torch.squeeze(output, 1)
-        if self.num_classes > 1:
-            output = self.multichannel_output_to_mask(output)
+        # if self.num_classes > 1:
+        #     output = self.multichannel_output_to_mask(output)
         loss = self.loss(output, targets)
         iou = self.mIoU(output, targets)
         self.log('val/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
@@ -199,8 +198,8 @@ class LitSeg(L.LightningModule):
         output = pred["prediction"]
         output = torch.Tensor(output).to(self.device)
         output = output.unsqueeze(0)
-        if self.num_classes > 1:
-            output = self.multichannel_output_to_mask(output)
+        # if self.num_classes > 1:
+        #     output = self.multichannel_output_to_mask(output)
         targets = torch.Tensor(targets).to(self.device)
         loss = self.loss(output, targets)
         iou = self.mIoU(output, targets)
@@ -289,12 +288,12 @@ ARCH='vit_small'
 CKPT_PATH='/data_hdd/jazibmodels/dino_vit-s_32_500k_randonly/epoch=6-step=500000.ckpt'
 CKPT_KEY='teacher'
 DATA_PATH='/data_hdd/pauline/dataset/'
-INPUT_SIZE=320
-OUTPUT_DIR="./test/"
 MAX_EPOCHS=10
 NUM_CLASSES=4
-EXP_NAME="first/"
 DEV="gpu"
+INPUT_SIZE=320
+OUTPUT_DIR="./test/"
+EXP_NAME='v2'
 
 if __name__ == '__main__':
     # args = get_args_parser_semseg().parse_args()
