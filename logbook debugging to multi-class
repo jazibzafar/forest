@@ -172,3 +172,19 @@ FileNotFoundError: [Errno 2] No such file or directory: './temp/first/'
   - solved by generalizing output paths
   - FINAL TODAY: running, but stats don't really look good.
 
+2024-10-24
+
+- 1st problem: stats very bad/strange
+  - first solution: move mask creation for multi-class case (one channel per class) to mask format (1 channel with classes as values) from outside (in the train/val/test steps) to the inside do that weights can be adjusted:
+    class ClipSegStyleDecoder
+    [...]
+      def forward
+      [...]
+      if self.num_classes > 1:
+        a = nn.Softmax(dim=1)(a)
+        a = torch.argmax(a, dim=1)
+  - stats still bad, maybe masks of Schorfheide not matching. Check that!
+  - fixed Schorfheide masks, which did not have all polygons before (for some strange reason...)
+
+
+
