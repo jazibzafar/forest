@@ -18,6 +18,7 @@ import argparse
 from lightning.pytorch.callbacks import ModelSummary
 import logging
 from torch.autograd import Variable
+import matplotlib.pyplot as plt
 
 
 def get_args_parser_semseg():
@@ -65,7 +66,7 @@ def get_args_parser_semseg():
                         help='in case of resuming training. specify the path to the checkpoint.')
     parser.add_argument('--exp_name', default="exp/", type=str,
                         help='name of the experiment directory.')
-    parser.add_argument("--device", default="cpu", type=str)
+    parser.add_argument("--device", default="gpu", type=str)
     return parser
 
 
@@ -207,6 +208,55 @@ class LitSeg(L.LightningModule):
         self.log('test/mIoU', iou, True)
 
 
+def visualize_predictions(model, dataloader, device="cuda", num_samples=5):
+    """
+    Visualizes predictions for a few samples from the dataloader.
+
+    Parameters:
+    - model: The trained model for prediction.
+    - dataloader: The dataloader containing the test samples.
+    - device: Device to run the model on ('cpu' or 'cuda').
+    - num_samples: Number of samples to visualize.
+    """
+    model.eval()
+    model.to(device)
+
+    # Fetch a few samples from the dataloader
+    for idx, (images, targets) in enumerate(dataloader):
+        if idx >= num_samples:
+            break
+        images = images.to(device)
+        #print("image shape: ", images.size())
+        targets = targets.to(device)
+        #print("target shape: ", targets.size())
+
+        with torch.no_grad():
+            predictions = model(images).cpu()
+            #print("prediction shape: ", predictions.size())
+
+        # Visualize the results
+        fig, ax = plt.subplots(1, 3, figsize=(15, 5))
+        #print("shape of images: ", images.size())
+        #print("shape of images[0].numpy().transpose(1, 2, 0): ", images[0].cpu().numpy().transpose(1, 2, 0).shape)
+        #print("shape of images[0].squeeze(): ", images[0].size())
+        rgb_image = images[0].cpu().numpy().transpose(1, 2, 0)[:, :, :3]
+        print("shape of rgb image: ", rgb_image.shape)
+        rgb_image = (rgb_image - rgb_image.min()) / (rgb_image.max() - rgb_image.min())
+
+        ax[0].imshow(rgb_image)
+        ax[0].set_title("Input Image")
+
+        ax[1].imshow(targets[0].cpu().numpy().reshape(320, 320), cmap='gray')
+        ax[1].set_title("Ground Truth")
+
+        print("shape of predictions: ", predictions.size())
+        print("shape of predictions[0].squeeze(): ", predictions[0].squeeze().size())
+        ax[2].imshow(predictions[0].squeeze().cpu().numpy(), cmap='gray')
+        ax[2].set_title("Prediction")
+
+        plt.show()
+
+
 def train_segmentation(args):
     # create the model
     checkpoint = load_dino_checkpoint(args.checkpoint_path, args.checkpoint_key)
@@ -237,7 +287,7 @@ def train_segmentation(args):
                                           # every_n_train_steps=int(args.max_steps / 5),
                                           enable_version_counter=False,
                                           save_last=True)
-    earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=3)
+    #earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=3)
     logger = TensorBoardLogger(save_dir=exp_dir,
                                name="",
                                version="",
@@ -249,13 +299,14 @@ def train_segmentation(args):
                         default_root_dir=args.output_dir,
                         enable_progress_bar=True,
                         logger=logger,
-                        log_every_n_steps=10,
-                        check_val_every_n_epoch=10,
+                        log_every_n_steps=9,
+                        check_val_every_n_epoch=9,
                         num_sanity_val_steps=0,
                         precision="bf16-mixed",
                         #fast_dev_run=True, # run with just one epoch for fast development
                         callbacks=[checkpoint_callback,
-                                   earlystopping_callback,])
+                                   #earlystopping_callback,
+                                   ])
     # trainer = L.Trainer(fast_dev_run=True)
     # begin training
     print("beginning the training.")
@@ -280,6 +331,9 @@ def train_segmentation(args):
                              drop_last=False, )
     trainer.test(model=light_seg, dataloaders=test_loader)
 
+    # Visualize predictions on some test tiles
+    #visualize_predictions(light_seg.model, test_loader, device=args.device)
+
     # writing stats from tensorboard logs to yml
     event_to_yml(exp_dir)
 
@@ -288,12 +342,12 @@ ARCH='vit_small'
 CKPT_PATH='/data_hdd/jazibmodels/dino_vit-s_32_500k_randonly/epoch=6-step=500000.ckpt'
 CKPT_KEY='teacher'
 DATA_PATH='/data_hdd/pauline/dataset/'
-MAX_EPOCHS=10
+MAX_EPOCHS=1000
 NUM_CLASSES=4
-DEV="gpu"
+DEV="cuda"
 INPUT_SIZE=320
 OUTPUT_DIR="./test/"
-EXP_NAME='v2'
+EXP_NAME='v9_40_9'
 
 if __name__ == '__main__':
     # args = get_args_parser_semseg().parse_args()
