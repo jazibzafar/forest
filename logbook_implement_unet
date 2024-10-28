@@ -1,0 +1,26 @@
+GOAL: run unet with my data
+
+1. check if all packages are installed in forestforest env - CHECK
+2. check which arguments to pass
+   + arch shouldn't matter because not called in prepare_resnet
+   - checkpoint_path: called in load_dino_checkpoint but which checkpoint correct and even needed?
+   - checkpoint_key: see checkpoint_path! teacher? or even needed?
+   + data_path: my data path
+   - crop_size: keep default?
+   + num_chans: default 4, so fine
+   + num_classes: must be 4
+   - lr: keep default? Research good learning rate.
+   + batch_size: keep 32. only change for improvement
+   + num_workers: keep default 8
+   + output_dir: choose new one for unet, e.g. test_unet
+   + max_epochs: keep small for debugging, then high to see when model learns and overfitts
+   - freeze_backbone: probably must be passed just like in light_segmentation.py?
+3. run run_unet_p.sh file
+   - error: segmentation_models_pytorch not installed
+     - installation using pip install -U segmentation-models-pytorch not working due to package dependency issues:
+       ERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.
+       lightning 2.4.0 requires torch<4.0,>=2.1.0, but you have torch 1.13.1 which is incompatible.
+       pytorch-lightning 2.3.0 requires torch>=2.0.0, but you have torch 1.13.1 which is incompatible.
+     - creating new environment called unetunet and installing packages manually:
+       1. conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
+       2.

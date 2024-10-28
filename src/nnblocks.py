@@ -107,9 +107,9 @@ class ClipSegStyleDecoder(nn.Module):
         size = int(math.sqrt(a.shape[2]))
         a = a.view(bs, a.shape[1], size, size)
         a = self.trans_conv(a)
-        if self.num_classes > 1:
-            a = nn.Softmax(dim=1)(a)
-            a = torch.argmax(a, dim=1)
+        # if self.num_classes > 1:
+        #     a = nn.Softmax(dim=1)(a)
+        #     a = torch.argmax(a, dim=1)
         return a
 
 

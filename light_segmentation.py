@@ -19,6 +19,8 @@ from lightning.pytorch.callbacks import ModelSummary
 import logging
 from torch.autograd import Variable
 import matplotlib.pyplot as plt
+from collections import Counter
+import numpy as np
 
 
 def get_args_parser_semseg():
@@ -70,8 +72,19 @@ def get_args_parser_semseg():
     return parser
 
 
+def compute_class_weights(loader, num_classes):
+    counts = torch.zeros(num_classes)
+    for _, mask in loader:
+        for cls in range(num_classes):
+            counts[cls] += (mask == cls).sum()
+    # Compute weights as the inverse of counts
+    weights = 1.0 / counts
+    weights = weights / weights.sum()  # Normalize to sum to 1
+    return weights
+
+
 class LitSeg(L.LightningModule):
-    def __init__(self, model, train_dataset, val_dataset, args):
+    def __init__(self, model, train_dataset, val_dataset, args, class_weights=None):
         super().__init__()
         self.save_hyperparameters(ignore=['model'])
 
@@ -84,7 +97,16 @@ class LitSeg(L.LightningModule):
 
         self.lr = args.lr
         self.num_classes = args.num_classes
-        self.loss = nn.MSELoss()
+        # self.loss = nn.CrossEntropyLoss()
+
+        # Apply class weights to CrossEntropyLoss if provided
+        if class_weights is not None:
+            print("\nclass weights not none!")
+            self.loss = nn.CrossEntropyLoss(weight=class_weights)
+        else:
+            print("\nclass weights none!")
+            self.loss = nn.CrossEntropyLoss()
+
         if self.num_classes == 1:
             self.mIoU = JaccardIndex(task="binary")
         elif self.num_classes > 1:
@@ -97,10 +119,15 @@ class LitSeg(L.LightningModule):
 
     @staticmethod
     def multichannel_output_to_mask(img):
+        print("\nin multi-channel to mask: shape and type of image: ", img.size(), img.dtype)
         softmax = torch.nn.Softmax(dim=1)
         img = softmax(img)
+        # img = img
+        #print("\nin multi-channel to mask: shape and type of image after softmax: ", img.size(), img.dtype)
         mask = torch.argmax(img, dim=1)
+        print("\nin multi-channel to mask: shape and type of mask after argmax: ", mask.size(), mask.dtype)
         return mask
+        #return img
 
     def configure_optimizers(self):
         regularized, not_regularized = [], []
@@ -145,7 +172,16 @@ class LitSeg(L.LightningModule):
         output = self.model(samples).squeeze()
         # output = torch.squeeze(output, 1)
         # if self.num_classes > 1:
+        #     print("training: multi-class convertion from output to mask applied")
         #     output = self.multichannel_output_to_mask(output)
+        #     print("output shape and dytpe within loop: ", output.size(), output.dtype)
+        print("\nLogits range:", output.min().item(), output.max().item())
+        print("Target unique values:", torch.unique(targets))
+
+        # try running with random data to see if loss function works (because it currently only produces 0)
+        output = torch.randn(32, 4, 320, 320, dtype=torch.float32)
+        targets = torch.randint(0, 4, (32, 320, 320), dtype=torch.int64)
+
         loss = self.loss(output, targets)
         loss = Variable(loss, requires_grad=True)
         self.log('train/loss', loss, prog_bar=True, on_step=False, on_epoch=True) # log inherited from LightningModule
@@ -202,6 +238,7 @@ class LitSeg(L.LightningModule):
         # if self.num_classes > 1:
         #     output = self.multichannel_output_to_mask(output)
         targets = torch.Tensor(targets).to(self.device)
+        targets = targets.round().to(torch.int64)
         loss = self.loss(output, targets)
         iou = self.mIoU(output, targets)
         self.log('test/loss', loss, True)
@@ -277,10 +314,13 @@ def train_segmentation(args):
     # val_dataset = SegDataMemBuffer(val_path, args.input_size, crop_overlap=0.4)
     val_dataset = SegDataset(val_path, crop_size=args.input_size)
 
+    # Compute class weights
+    class_weights = compute_class_weights(train_dataset, args.num_classes).to(args.device)
+
     # experiment directory
     exp_dir = os.path.join(args.output_dir, args.exp_name)
     # lightning class
-    light_seg = LitSeg(model, train_dataset, val_dataset, args)
+    light_seg = LitSeg(model, train_dataset, val_dataset, args, class_weights)
     # logger and callbacks
     checkpoint_callback = ModelCheckpoint(dirpath=args.output_dir,
                                           every_n_epochs=int(args.max_epochs / 3),
@@ -299,11 +339,12 @@ def train_segmentation(args):
                         default_root_dir=args.output_dir,
                         enable_progress_bar=True,
                         logger=logger,
-                        log_every_n_steps=9,
-                        check_val_every_n_epoch=9,
+                        log_every_n_steps=10,
+                        # check_val_every_n_epoch=9,
                         num_sanity_val_steps=0,
                         precision="bf16-mixed",
-                        #fast_dev_run=True, # run with just one epoch for fast development
+                        gradient_clip_val=0.5,
+                        # fast_dev_run=True, # run with just one epoch for fast development
                         callbacks=[checkpoint_callback,
                                    #earlystopping_callback,
                                    ])
@@ -342,12 +383,13 @@ ARCH='vit_small'
 CKPT_PATH='/data_hdd/jazibmodels/dino_vit-s_32_500k_randonly/epoch=6-step=500000.ckpt'
 CKPT_KEY='teacher'
 DATA_PATH='/data_hdd/pauline/dataset/'
-MAX_EPOCHS=1000
+MAX_EPOCHS=10
 NUM_CLASSES=4
 DEV="cuda"
 INPUT_SIZE=320
 OUTPUT_DIR="./test/"
-EXP_NAME='v9_40_9'
+EXP_NAME='v10_10_x'
+# LR=0.0001
 
 if __name__ == '__main__':
     # args = get_args_parser_semseg().parse_args()
@@ -361,6 +403,7 @@ if __name__ == '__main__':
                                                f"--output_dir {OUTPUT_DIR} "
                                                f"--max_epochs {MAX_EPOCHS} "
                                                f"--device {DEV} "
+                                               # f"--lr {LR} "
                                                f"--exp_name {EXP_NAME}".split()
                                                )
     # write args to a yml file in output dir

@@ -1,0 +1,13 @@
+arch: resnet50
+batch_size: 32
+checkpoint_key: teacher
+checkpoint_path: /data_hdd/jazibmodels/dino_vit-s_32_500k_randonly/epoch=6-step=500000.ckpt
+crop_size: 224
+data_path: /data_hdd/pauline/dataset/
+freeze_backbone: false
+lr: 0.001
+max_epochs: 10
+num_chans: 4
+num_classes: 4
+num_workers: 8
+output_dir: ./test_unet/

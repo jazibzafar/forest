@@ -47,8 +47,15 @@ class LitUnet(L.LightningModule):
         self.val_sampler = SequentialSampler(self.val_dataset)
 
         self.lr = args.lr
-        self.loss = nn.BCEWithLogitsLoss()
-        self.mIoU = JaccardIndex(task="binary")
+        self.loss = nn.BCEWithLogitsLoss() # nn.MSELoss(), Crossentropy
+        self.loss = nn.MSELoss()  # nn.MSELoss(), Crossentropy
+        #self.mIoU = JaccardIndex(task="binary") # change to
+        if self.num_classes == 1:
+            self.mIoU = JaccardIndex(task="binary")
+        elif self.num_classes > 1:
+            self.mIoU = JaccardIndex(task="multiclass", num_classes=args.num_classes)
+        else:
+            raise Exception("num_classes should be >0.")
         # other things
         self.batch_size = args.batch_size
         self.num_workers = args.num_workers
@@ -85,9 +92,13 @@ class LitUnet(L.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         samples = batch[0]
-        targets = batch[1]
+        print("shape of samples: ", samples.size())
+        targets = batch[1].permute(0, 3, 1, 2)
+        print("shape of targets: ", targets.size())
         output = self.model(samples)
+        print("shape of output: ", output.size())
         output = output.squeeze(1)
+        print("shape of output: ", output.size())
         loss = self.loss(output, targets.squeeze(3))
         iou = self.mIoU(output, targets.squeeze(3))
         self.log('val/loss', loss, prog_bar=True, on_step=False, on_epoch=True)

@@ -8,8 +8,9 @@ from torch.utils.data import get_worker_info
 from itertools import islice
 import torch
 import random
+import torch.nn as nn
 # from osgeo import gdal
-import webdataset as wds
+#import webdataset as wds
 
 # def img_loader(path, dim_ordering="CHW"):
 #     if dim_ordering == "HWC":
@@ -21,7 +22,9 @@ import webdataset as wds
 
 
 def img_loader(path):
-    return imread(path)
+    img = imread(path)
+    img_norm = (img - np.min(img)) / (np.max(img) - np.min(img))
+    return img_norm
 
 
 def get_crop_indices(length, window, overlap):
@@ -198,9 +201,10 @@ class SegDataset(Dataset):
         # # convert tile and mask to torch.Tensor
         t_tile = ToTensor()(t_tile)
         t_mask = torch.Tensor(t_mask)
-        #print("SegDataset __getiitm__ products: ")
-        #print("t_tile size: ", t_tile.size())
-        #print("t_mask size: ", t_mask.size())
+        #print("dtype of t_mask: ", mask.dtype)
+        t_mask = t_mask.round().to(torch.int64)
+        #print("dtype of t_mask after conversion: ", t_mask.dtype)
+        #t_mask = nn.functional.one_hot(t_mask, num_classes=4)
         return t_tile, t_mask
 
 
