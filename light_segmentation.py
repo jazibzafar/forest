@@ -180,9 +180,9 @@ def train_segmentation(args):
 
     # build the dataset
     train_path = os.path.join(args.data_path, 'train/')
-    train_dataset = SegDataMemBuffer(train_path, args.input_size, crop_overlap=0.4)
+    train_dataset = SegDataset(train_path, args.input_size)
     val_path = os.path.join(args.data_path, 'val/')
-    val_dataset = SegDataMemBuffer(val_path, args.input_size, crop_overlap=0.4)
+    val_dataset = SegDataset(val_path, args.input_size, train=False)
 
     # lightning class
     light_seg = LitSeg(model, train_dataset, val_dataset, args)
@@ -207,6 +207,8 @@ def train_segmentation(args):
                         log_every_n_steps=10,
                         check_val_every_n_epoch=3,
                         profiler='advanced',
+                        # profiler=None,
+                        devices=1,
                         callbacks=[checkpoint_callback, earlystopping_callback, mymonitor, my_callback])
     light_seg.configure_callbacks()
     # begin training
