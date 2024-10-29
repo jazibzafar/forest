@@ -187,4 +187,42 @@ FileNotFoundError: [Errno 2] No such file or directory: './temp/first/'
   - fixed Schorfheide masks, which did not have all polygons before (for some strange reason...)
 
 
+2024-10-29
+
+- no documentation yesterday, but summary: model was not learning, so the following things were tried:
+  - change the place where the output was converted to mask-style (batch size, height, width) int (64?)
+    - first option: in the training/validation/test_step before calculating the loss (if statement with num_classes > 1)
+    - second option: in the model architecture (nnblocks.px) at the end of the forward function (softmax for probabilites and then argmax for choosing the class with the highest probability)
+  - change loss function:
+    - CrossEntropy
+      - mask transformation of output had to be removed, because CrossEntropy needs unnormalized logits with one channel per class
+      - problems:
+        - logits range quite small and therefore loss always zero
+          - checked loss calculation using random logits and it worked well, so the problem must lie in the low logits range
+          - maybe try another loss for low logits range
+            - try focal loss: https://github.com/mathiaszinnen/focal_loss_torch
+            - try adding label smoothing to Cross Entropy Loss
+            - try Kullback-Leibler Divergence Loss (KLDivLoss)
+        - also, many nan logits
+          - reasons checked:
+            - reducing learning rate: no change
+            - normalize input data in img_loader: no change
+            - add weights according to the class occurrences (inverse weights to relative occurrences): no change
+              - added compute_class_weights function and added weights argument in loss function (Crossentropy)
+              - problem: some issue with memory:
+                [rank0]: Traceback (most recent call last):
+                [rank0]:   File "/home/pauline/PycharmProjects/forest/light_segmentation.py", line 412, in <module>
+                [rank0]:     train_segmentation(args)
+                [rank0]:   File "/home/pauline/PycharmProjects/forest/light_segmentation.py", line 358, in train_segmentation
+                [rank0]:     trainer.fit(model=light_seg) # invisible arguments here: train_dataloader and val_dataloader
+                [rank0]:     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                [rank0]:   File "/home/pauline/PycharmProjects/forest/light_segmentation.py", line 185, in training_step
+                [rank0]:     loss = self.loss(output, targets)
+                [rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+                [rank0]: RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cpu and cuda:0! (when checking argument for argument weight in method wrapper_CUDA__nll_loss2d_forward)
+            - added gradient clipping in trainer: gradient_clip_val=0.5: no change
+          - to be checked:
+            - which data produces nan values in logits?
+
+
 

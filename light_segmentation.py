@@ -77,9 +77,12 @@ def compute_class_weights(loader, num_classes):
     for _, mask in loader:
         for cls in range(num_classes):
             counts[cls] += (mask == cls).sum()
-    # Compute weights as the inverse of counts
-    weights = 1.0 / counts
+
+    # Compute inverse weights for classes starting from index 1
+    weights = torch.zeros(num_classes)  # Initialize weights with 0 for the first class
+    weights[1:] = 1.0 / counts[1:]  # Assign inverse weights starting from the second class
     weights = weights / weights.sum()  # Normalize to sum to 1
+
     return weights
 
 
@@ -105,7 +108,7 @@ class LitSeg(L.LightningModule):
             self.loss = nn.CrossEntropyLoss(weight=class_weights)
         else:
             print("\nclass weights none!")
-            self.loss = nn.CrossEntropyLoss()
+            self.loss = nn.MSELoss()
 
         if self.num_classes == 1:
             self.mIoU = JaccardIndex(task="binary")
@@ -179,8 +182,8 @@ class LitSeg(L.LightningModule):
         print("Target unique values:", torch.unique(targets))
 
         # try running with random data to see if loss function works (because it currently only produces 0)
-        output = torch.randn(32, 4, 320, 320, dtype=torch.float32)
-        targets = torch.randint(0, 4, (32, 320, 320), dtype=torch.int64)
+        # output = torch.randn(32, 4, 320, 320, dtype=torch.float32)
+        # targets = torch.randint(0, 4, (32, 320, 320), dtype=torch.int64)
 
         loss = self.loss(output, targets)
         loss = Variable(loss, requires_grad=True)
@@ -315,12 +318,17 @@ def train_segmentation(args):
     val_dataset = SegDataset(val_path, crop_size=args.input_size)
 
     # Compute class weights
-    class_weights = compute_class_weights(train_dataset, args.num_classes).to(args.device)
+    if args.num_classes > 1:
+        class_weights = compute_class_weights(train_dataset, args.num_classes).to(args.device)
 
     # experiment directory
     exp_dir = os.path.join(args.output_dir, args.exp_name)
     # lightning class
-    light_seg = LitSeg(model, train_dataset, val_dataset, args, class_weights)
+    if args.num_classes > 1:
+        light_seg = LitSeg(model, train_dataset, val_dataset, args, class_weights)
+    else:
+        light_seg = LitSeg(model, train_dataset, val_dataset, args)
+
     # logger and callbacks
     checkpoint_callback = ModelCheckpoint(dirpath=args.output_dir,
                                           every_n_epochs=int(args.max_epochs / 3),
@@ -340,7 +348,7 @@ def train_segmentation(args):
                         enable_progress_bar=True,
                         logger=logger,
                         log_every_n_steps=10,
-                        # check_val_every_n_epoch=9,
+                        check_val_every_n_epoch=10,
                         num_sanity_val_steps=0,
                         precision="bf16-mixed",
                         gradient_clip_val=0.5,
@@ -384,11 +392,11 @@ CKPT_PATH='/data_hdd/jazibmodels/dino_vit-s_32_500k_randonly/epoch=6-step=500000
 CKPT_KEY='teacher'
 DATA_PATH='/data_hdd/pauline/dataset/'
 MAX_EPOCHS=10
-NUM_CLASSES=4
+NUM_CLASSES=1
 DEV="cuda"
 INPUT_SIZE=320
 OUTPUT_DIR="./test/"
-EXP_NAME='v10_10_x'
+EXP_NAME='v13_10_10_num_class_1'
 # LR=0.0001
 
 if __name__ == '__main__':
