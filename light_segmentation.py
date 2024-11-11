@@ -152,8 +152,9 @@ class LitSeg(L.LightningModule):
         sample = batch[0].squeeze(0).cpu().numpy()
         targets = batch[1].squeeze(0).cpu().numpy()
         pred = predict_on_array_cf(self.model.eval(), sample,
-                                   in_shape=(4, 992, 992),
-                                   out_bands=args.num_classes,
+                                   in_shape=(4, 320, 320), # changed form 992 to 320
+                                   #out_bands=args.num_classes,
+                                   out_bands=1, # temporal change to reproduce results for binary case
                                    drop_border=0,
                                    stride=26,
                                    batchsize=1,
@@ -223,7 +224,7 @@ def train_segmentation(args):
 
     # begin testing
     test_path = os.path.join(args.data_path, 'test/')
-    test_dataset = SegDataset(test_path, 992, train=False)
+    test_dataset = SegDataset(test_path, 320, train=False)
     test_sampler = SequentialSampler(test_dataset)
     test_loader = DataLoader(dataset=test_dataset,
                              sampler=test_sampler,

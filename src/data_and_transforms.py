@@ -187,6 +187,11 @@ class SegDataset(Dataset):
         mask_path = os.path.join(self.mask_path, mask_name)
         tile = imread(tile_path)
         mask = imread(mask_path)
+
+        # convert mask to single-class case
+        mask[mask == 2] = 1
+        mask[mask == 3] = 1
+
         # stack tile and mask together for crops and flips
         stacked = np.dstack((tile, mask))
         # default augments
