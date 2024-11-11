@@ -2,3 +2,6 @@ temp/
 .pyc
 testingstuffout/
 test/
+test_unet/
+.idea/
+test_bin/

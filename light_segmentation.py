@@ -78,9 +78,8 @@ def compute_class_weights(loader, num_classes):
         for cls in range(num_classes):
             counts[cls] += (mask == cls).sum()
 
-    # Compute inverse weights for classes starting from index 1
-    weights = torch.zeros(num_classes)  # Initialize weights with 0 for the first class
-    weights[1:] = 1.0 / counts[1:]  # Assign inverse weights starting from the second class
+    # Compute inverse weights for all classes
+    weights = 1.0 / counts  # Calculate inverse weights for all classes
     weights = weights / weights.sum()  # Normalize to sum to 1
 
     return weights
@@ -227,7 +226,7 @@ class LitSeg(L.LightningModule):
         sample = batch[0].squeeze(0).cpu().numpy()
         targets = batch[1].cpu().numpy()
         pred = predict_on_array_cf(self.model.eval(), sample,
-                                   in_shape=(4, 320, 320),
+                                   in_shape=(4, 256, 256),
                                    out_bands=self.args.num_classes,
                                    drop_border=0,
                                    stride=26,
@@ -286,7 +285,7 @@ def visualize_predictions(model, dataloader, device="cuda", num_samples=5):
         ax[0].imshow(rgb_image)
         ax[0].set_title("Input Image")
 
-        ax[1].imshow(targets[0].cpu().numpy().reshape(320, 320), cmap='gray')
+        ax[1].imshow(targets[0].cpu().numpy().reshape(256, 256), cmap='gray')
         ax[1].set_title("Ground Truth")
 
         print("shape of predictions: ", predictions.size())
@@ -369,7 +368,7 @@ def train_segmentation(args):
 
     # begin testing
     test_path = os.path.join(args.data_path, 'test')
-    test_dataset = SegDataset(test_path, 320, train=False)
+    test_dataset = SegDataset(test_path, 256, train=False)
     test_sampler = SequentialSampler(test_dataset)
     test_loader = DataLoader(dataset=test_dataset,
                              sampler=test_sampler,
@@ -390,14 +389,14 @@ def train_segmentation(args):
 ARCH='vit_small'
 CKPT_PATH='/data_hdd/jazibmodels/dino_vit-s_32_500k_randonly/epoch=6-step=500000.ckpt'
 CKPT_KEY='teacher'
-DATA_PATH='/data_hdd/pauline/dataset/'
-MAX_EPOCHS=10
-NUM_CLASSES=1
+DATA_PATH='/data_hdd/pauline/dataset/swf/256x256/'
+MAX_EPOCHS=1000
+NUM_CLASSES=4
 DEV="cuda"
-INPUT_SIZE=320
+INPUT_SIZE=256
 OUTPUT_DIR="./test/"
-EXP_NAME='v13_10_10_num_class_1'
-# LR=0.0001
+EXP_NAME='v25_1000_10_256x256_fixed'
+LR=0.01
 
 if __name__ == '__main__':
     # args = get_args_parser_semseg().parse_args()
@@ -411,7 +410,7 @@ if __name__ == '__main__':
                                                f"--output_dir {OUTPUT_DIR} "
                                                f"--max_epochs {MAX_EPOCHS} "
                                                f"--device {DEV} "
-                                               # f"--lr {LR} "
+                                               f"--lr {LR} "
                                                f"--exp_name {EXP_NAME}".split()
                                                )
     # write args to a yml file in output dir
