@@ -1,0 +1,9 @@
+temp/
+.idea/
+test/
+test_bin/
+testingstuffout/
+.png
+.jpg
+.ckpt
+.yaml
