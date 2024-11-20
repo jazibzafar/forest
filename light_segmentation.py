@@ -107,7 +107,8 @@ class LitSeg(L.LightningModule):
             self.loss = nn.CrossEntropyLoss(weight=class_weights)
         else:
             print("\nclass weights none!")
-            self.loss = nn.MSELoss()
+            # self.loss = nn.MSELoss()
+            self.loss = nn.CrossEntropyLoss()
 
         if self.num_classes == 1:
             self.mIoU = JaccardIndex(task="binary")
@@ -316,17 +317,19 @@ def train_segmentation(args):
     # val_dataset = SegDataMemBuffer(val_path, args.input_size, crop_overlap=0.4)
     val_dataset = SegDataset(val_path, crop_size=args.input_size)
 
-    # Compute class weights
-    if args.num_classes > 1:
-        class_weights = compute_class_weights(train_dataset, args.num_classes).to(args.device)
+    # # Compute class weights
+    # if args.num_classes > 1:
+    #     class_weights = compute_class_weights(train_dataset, args.num_classes).to(args.device)
 
     # experiment directory
     exp_dir = os.path.join(args.output_dir, args.exp_name)
     # lightning class
-    if args.num_classes > 1:
-        light_seg = LitSeg(model, train_dataset, val_dataset, args, class_weights)
-    else:
-        light_seg = LitSeg(model, train_dataset, val_dataset, args)
+    # if args.num_classes > 1:
+    #     light_seg = LitSeg(model, train_dataset, val_dataset, args, class_weights)
+    # else:
+    #     light_seg = LitSeg(model, train_dataset, val_dataset, args)
+
+    light_seg = LitSeg(model, train_dataset, val_dataset, args)
 
     # logger and callbacks
     checkpoint_callback = ModelCheckpoint(dirpath=args.output_dir,
@@ -390,12 +393,12 @@ ARCH='vit_small'
 CKPT_PATH='/data_hdd/jazibmodels/dino_vit-s_32_500k_randonly/epoch=6-step=500000.ckpt'
 CKPT_KEY='teacher'
 DATA_PATH='/data_hdd/pauline/dataset/swf/256x256/'
-MAX_EPOCHS=1000
+MAX_EPOCHS=100
 NUM_CLASSES=4
 DEV="cuda"
 INPUT_SIZE=256
 OUTPUT_DIR="./test/"
-EXP_NAME='v25_1000_10_256x256_fixed'
+EXP_NAME='v26_100_10_256x256_fixed_no_weights'
 LR=0.01
 
 if __name__ == '__main__':
