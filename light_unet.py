@@ -5,15 +5,17 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from lightning.pytorch.loggers import TensorBoardLogger
 import segmentation_models_pytorch as smp
 import os
-from src.data_and_transforms import SegDataset, SegDataMemBuffer
+from src.data_and_transforms import SegDataset, SegDataMemBuffer, Fortress
 from torchmetrics import JaccardIndex
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from torch.optim import AdamW
 import lightning as L
 import torch.nn as nn
 import time
-from src.checkpoints import load_dino_checkpoint, prepare_resnet
+from src.checkpoints import load_dino_checkpoint, prepare_resnet, prepare_resnet2
 import argparse
+
+from src.metrics import FocalLoss
 from src.utils import write_dict_to_yaml
 from src.predict_on_array import predict_on_array_cf
 
@@ -25,7 +27,7 @@ def get_args_parser_unet():
     parser.add_argument('--checkpoint_key', default='teacher', type=str)
     parser.add_argument('--data_path', default='/path/to/data/', type=str)
     parser.add_argument('--crop_size', default=224, type=int)
-    parser.add_argument('--num_chans', default=4, type=int)
+    parser.add_argument('--num_chans', default=3, type=int)
     parser.add_argument('--num_classes', default=1, type=int)
     parser.add_argument('--lr', default=1e-3, type=float)
     parser.add_argument('--batch_size', default=32, type=int)
@@ -47,8 +49,16 @@ class LitUnet(L.LightningModule):
         self.val_sampler = SequentialSampler(self.val_dataset)
 
         self.lr = args.lr
-        self.loss = nn.BCEWithLogitsLoss()
-        self.mIoU = JaccardIndex(task="binary")
+        self.num_classes = args.num_classes
+        if self.num_classes == 1:
+            self.loss = nn.BCEWithLogitsLoss()
+            self.mIoU = JaccardIndex(task="binary")
+        elif self.num_classes > 1:
+            # self.loss = nn.CrossEntropyLoss()
+            self.loss = FocalLoss(gamma=2)
+            self.mIoU = JaccardIndex(task="multiclass", num_classes=self.num_classes)
+        else:
+            raise Exception("num_classes should be >0.")
         # other things
         self.batch_size = args.batch_size
         self.num_workers = args.num_workers
@@ -78,7 +88,8 @@ class LitUnet(L.LightningModule):
         samples = batch[0]
         targets = batch[1]
         output = self.model(samples)
-        output = output.squeeze(1)
+        # output = output.squeeze(1)
+        breakpoint()
         loss = self.loss(output, targets.squeeze(3))
         self.log('train/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
         return loss
@@ -87,7 +98,7 @@ class LitUnet(L.LightningModule):
         samples = batch[0]
         targets = batch[1]
         output = self.model(samples)
-        output = output.squeeze(1)
+        # output = output.squeeze(1)
         loss = self.loss(output, targets.squeeze(3))
         iou = self.mIoU(output, targets.squeeze(3))
         self.log('val/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
@@ -131,9 +142,9 @@ def train_unet(args):
     model.encoder.load_state_dict(backbone.state_dict())
     # build the dataset
     train_path = os.path.join(args.data_path, 'train/')
-    train_dataset = SegDataMemBuffer(train_path, args.crop_size, crop_overlap=0.4)
+    train_dataset = Fortress(train_path, args.crop_size, )
     val_path = os.path.join(args.data_path, 'val/')
-    val_dataset = SegDataMemBuffer(val_path, args.crop_size, crop_overlap=0.4)
+    val_dataset = Fortress(val_path, args.crop_size, )
 
     unet_model = LitUnet(model, train_dataset, val_dataset, args)
 
@@ -163,17 +174,17 @@ def train_unet(args):
     end = time.time()
     print(f"training completed. Elapsed time {end - start} seconds.")
     # begin testing
-    test_path = os.path.join(args.data_path, 'test/')
-    test_dataset = SegDataset(test_path, crop_size=992, train=False)
-    test_sampler = SequentialSampler(test_dataset)
-    test_loader = DataLoader(dataset=test_dataset,
-                             sampler=test_sampler,
-                             batch_size=1,
-                             num_workers=args.num_workers,
-                             persistent_workers=True,
-                             pin_memory=True,
-                             drop_last=False, )
-    trainer.test(model=unet_model, dataloaders=test_loader)
+    # test_path = os.path.join(args.data_path, 'test/')
+    # test_dataset = SegDataset(test_path, crop_size=992, train=False)
+    # test_sampler = SequentialSampler(test_dataset)
+    # test_loader = DataLoader(dataset=test_dataset,
+    #                          sampler=test_sampler,
+    #                          batch_size=1,
+    #                          num_workers=args.num_workers,
+    #                          persistent_workers=True,
+    #                          pin_memory=True,
+    #                          drop_last=False, )
+    # trainer.test(model=unet_model, dataloaders=test_loader)
 
 
 if __name__ == '__main__':

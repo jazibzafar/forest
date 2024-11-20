@@ -1,3 +1,5 @@
+import copy
+
 import torch
 from collections import OrderedDict
 import src.vits as vits
@@ -73,6 +75,24 @@ def prepare_vit(arch, pretrained_model, patch_size, num_chans=4):
     return model
 
 
+def prepare_vit2(arch, pretrained_model, patch_size, num_chans=4):
+    if pretrained_model['patch_embed.proj.weight'].size(1) != num_chans:
+        # reduce num chans from 4 (backbone) to 3 (data)
+        model = vits.__dict__[arch](patch_size=patch_size, num_classes=0, in_chans=4)
+        msg = model.load_state_dict(pretrained_model, strict=False)
+        print(msg)
+        weight = model.patch_embed.proj.weight.clone()
+        model.patch_embed.proj = torch.nn.Conv2d(num_chans, model.embed_dim,
+                                                 kernel_size=(patch_size, patch_size), stride=(patch_size, patch_size))
+        with torch.no_grad():
+            model.patch_embed.proj.weight[:, :2] = weight[:, :2]
+    else:
+        model = vits.__dict__[arch](patch_size=patch_size, num_classes=0, in_chans=num_chans)
+        msg = model.load_state_dict(pretrained_model, strict=False)
+        print(msg)
+    return model
+
+
 def prepare_resnet(arch, pretrained_model, num_chans=4):
     model = resnet50()
 
@@ -85,6 +105,20 @@ def prepare_resnet(arch, pretrained_model, num_chans=4):
             model.conv1.weight[:, num_chans-1] = model.conv1.weight[:,0]
     msg = model.load_state_dict(pretrained_model, strict=False)
     print(msg)
+    return model
+
+
+def prepare_resnet2(arch, pretrained_model, num_chans=4):
+    model = resnet50()
+    msg = model.load_state_dict(pretrained_model, strict=False)
+    print(msg)
+    # adapt the first conv layer to num_chans
+    if model.conv1.in_channels != num_chans:
+        weight = model.conv1.weight.clone()
+        model.conv1 =torch.nn.Conv2d(num_chans, 64, kernel_size=(7,7), stride=(2,2), padding=(3,3), bias=False)
+        with torch.no_grad():
+            model.conv1.weight[:, :2] = weight[:, :2]
+
     return model
 
 

@@ -197,7 +197,59 @@ class SegDataset(Dataset):
         t_mask = t_stacked[:, :, 4]
         # # convert tile and mask to torch.Tensor
         # t_tile = torch.Tensor(t_tile)
-        t_tile = ToTensor()(t_tile)
+        t_tile = ToTensor()(t_tile.astype('uint8'))
+        t_mask = torch.Tensor(t_mask)
+        return t_tile, t_mask
+
+
+class Fortress(Dataset):
+    def __init__(self, data_path, crop_size, train=True):
+        super().__init__()
+        self.tile_path = os.path.join(data_path, 'tiles/')
+        self.mask_path = os.path.join(data_path, 'masks/')
+        self.tile_list = sorted(os.listdir(self.tile_path))
+        self.mask_list = sorted(os.listdir(self.mask_path))
+        # self.reduce_size = 400
+        for i in range(len(self.tile_list)):
+            print(f"{self.tile_list[i]} -----> {self.mask_list[i]}")
+        if train:
+            self.default_augment = A.Compose([
+                A.Resize(height=crop_size,
+                         width=crop_size,
+                         always_apply=True),
+                # A.RandomCrop(height=crop_size,
+                #              width=crop_size,
+                #              always_apply=True),
+                A.CLAHE(p=0.2),
+                A.ColorJitter(p=0.2),
+                A.Downscale(p=0.1),
+                A.HorizontalFlip(p=0.3),  # 0.5
+                A.RandomRotate90(p=0.1),  # 0.2
+            ])
+        else:
+            self.default_augment = A.Compose([A.Resize(height=crop_size,
+                                                      width=crop_size,
+                                                      always_apply=True),
+                                              # A.RandomCrop(height=crop_size,
+                                              #              width=crop_size,
+                                              #              always_apply=True),
+                                              ])
+
+    def __len__(self):
+        return len(self.tile_list)
+
+    def __getitem__(self, index):
+        tile_name = self.tile_list[index]
+        mask_name = self.mask_list[index]
+        tile_path = os.path.join(self.tile_path, tile_name)
+        mask_path = os.path.join(self.mask_path, mask_name)
+        tile = imread(tile_path)
+        tile = tile[:, :, :3]  # remove the alpha band
+        mask = imread(mask_path)
+        t = self.default_augment(image=tile, mask=mask)
+        t_tile = t['image']
+        t_mask = t['mask']
+        t_tile = ToTensor()(t_tile.astype('uint8'))
         t_mask = torch.Tensor(t_mask)
         return t_tile, t_mask
 

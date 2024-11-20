@@ -1,22 +1,26 @@
+from torch.optim.lr_scheduler import ExponentialLR
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from src.data_and_transforms import SegDataset, SegDataMemBuffer
+from src.data_and_transforms import SegDataset, SegDataMemBuffer, Fortress
 import torch.nn as nn
 import time
 import torch
 import lightning as L
-from src.checkpoints import load_dino_checkpoint, prepare_vit
+from src.checkpoints import load_dino_checkpoint, prepare_vit, prepare_vit2
 from torchmetrics import JaccardIndex
 from src.nnblocks import ClipSegStyleDecoder
+from src.metrics import mIOU
 from src.predict_on_array import predict_on_array_cf
 from src.utils import write_dict_to_yaml, event_to_yml
 from lightning.pytorch.loggers import TensorBoardLogger
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
-from lightning.pytorch.callbacks import ModelCheckpoint, DeviceStatsMonitor
+from lightning.pytorch.callbacks import ModelCheckpoint, DeviceStatsMonitor, LearningRateMonitor
 from lightning.pytorch.callbacks import Callback
 import os
 import argparse
+from segmentation_models_pytorch.losses import DiceLoss, TverskyLoss, FocalLoss
 from lightning.pytorch.callbacks import ModelSummary
 import logging
+from lightning.pytorch.utilities import grad_norm
 
 
 def get_args_parser_semseg():
@@ -50,8 +54,12 @@ def get_args_parser_semseg():
                         help="""number of decoder heads.""")
     parser.add_argument('--lr', default=0.00001, type=float,
                         help="""learning rate""")
+    parser.add_argument('--weight_decay', default=0.05, type=float,
+                        help="""weight decay""")
     parser.add_argument('--batch_size', default=32, type=int,
                         help="""batch size""")
+    parser.add_argument('--in_chans', default=4, type=int,
+                        help="""channels in input images""")
     parser.add_argument('--num_workers', default=8, type=int,
                         help="""number of dataloader workers""")
     parser.add_argument('--output_dir', default='/path/to/data/', type=str,
@@ -81,11 +89,16 @@ class LitSeg(L.LightningModule):
 
         self.lr = args.lr
         self.num_classes = args.num_classes
-        self.loss = nn.BCEWithLogitsLoss()
+
         if self.num_classes == 1:
+            self.loss = nn.BCEWithLogitsLoss()
             self.mIoU = JaccardIndex(task="binary")
         elif self.num_classes > 1:
-            self.mIoU = JaccardIndex(task="multiclass", num_classes=self.num_classes)
+            # self.loss = FocalLoss(mode='multiclass', alpha=0.25, gamma=2)
+            weights = torch.Tensor([0.01, 0.40, 0.02, 0.01, 0.21,
+                                    0.04, 0.03, 0.01, 0.05, 0.01,
+                                    0.01, 0.01, 0.24])
+            self.loss = nn.CrossEntropyLoss(weight=weights)  # weight=weights
         else:
             raise Exception("num_classes should be >0.")
         # other things
@@ -110,12 +123,10 @@ class LitSeg(L.LightningModule):
             else:
                 regularized.append(p)
         param_groups = [{'params': regularized},
-                        {'params': not_regularized, 'weight_decay': 0.}]  # weight decay is 0 because of the scheduler
-        opt = torch.optim.AdamW(param_groups, self.lr)
-        # opt_params = [x for x in self.model.parameters() if x.requires_grad]
-        # opt = torch.optim.AdamW(params=opt_params,
-        #                         lr=self.lr)
-        return opt
+                        {'params': not_regularized, }]   # 'weight_decay': 0. weight decay is 0 because of the scheduler
+        opt = torch.optim.AdamW(param_groups, self.lr, weight_decay=args.weight_decay)
+        lr_sched = ExponentialLR(opt, 0.8)
+        return [opt], [lr_sched]
 
     def train_dataloader(self):
         return DataLoader(self.train_dataset,
@@ -137,26 +148,24 @@ class LitSeg(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
         samples = batch[0]
-        targets = batch[1].squeeze()
-        # targets = targets.permute((0, 3, 1, 2))
-        output = self.model(samples).squeeze()
-        # output = torch.squeeze(output, 1)
-        if self.num_classes > 1:
-            output = self.multichannel_output_to_mask(output)
+        targets = batch[1].type(torch.LongTensor).to(self.device)
+        output = self.model(samples)
+
         loss = self.loss(output, targets)
         self.log('train/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
+        output_mask = self.multichannel_output_to_mask(output)
+        iou = mIOU(output_mask, targets, num_classes=args.num_classes)
+        self.log('train/mIoU', iou, prog_bar=True, on_step=False, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         samples = batch[0]
-        targets = batch[1].squeeze()
-        # targets = targets.permute((0, 3, 1, 2))
-        output = self.model(samples).squeeze()
-        # output = torch.squeeze(output, 1)
-        if self.num_classes > 1:
-            output = self.multichannel_output_to_mask(output)
+        targets = batch[1].type(torch.LongTensor).to(self.device)
+        output = self.model(samples)
+
         loss = self.loss(output, targets)
-        iou = self.mIoU(output, targets)
+        output_mask = self.multichannel_output_to_mask(output)
+        iou = mIOU(output_mask, targets, num_classes=args.num_classes)
         self.log('val/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
         self.log('val/mIoU', iou, prog_bar=True, on_step=False, on_epoch=True)
 
@@ -184,7 +193,7 @@ class LitSeg(L.LightningModule):
 def train_segmentation(args):
     # create the model
     checkpoint = load_dino_checkpoint(args.checkpoint_path, args.checkpoint_key)
-    model_backbone = prepare_vit(args.arch, checkpoint, args.patch_size)
+    model_backbone = prepare_vit2(args.arch, checkpoint, args.patch_size, num_chans=args.in_chans)
     model = ClipSegStyleDecoder(backbone=model_backbone,
                                 patch_size=args.patch_size,
                                 reduce_dim=args.reduce_dim,
@@ -195,11 +204,9 @@ def train_segmentation(args):
 
     # build the dataset
     train_path = os.path.join(args.data_path, 'train')
-    # train_dataset = SegDataMemBuffer(train_path, args.input_size, crop_overlap=0.4)
-    train_dataset = SegDataset(train_path, crop_size=args.input_size)
+    train_dataset = Fortress(train_path, crop_size=args.input_size)
     val_path = os.path.join(args.data_path, 'val')
-    # val_dataset = SegDataMemBuffer(val_path, args.input_size, crop_overlap=0.4)
-    val_dataset = SegDataset(val_path, crop_size=args.input_size)
+    val_dataset = Fortress(val_path, crop_size=args.input_size)
 
     # experiment directory
     exp_dir = os.path.join(args.output_dir, args.exp_name)
@@ -211,11 +218,12 @@ def train_segmentation(args):
                                           # every_n_train_steps=int(args.max_steps / 5),
                                           enable_version_counter=False,
                                           save_last=True)
-    earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=3)
+    earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=5)
     logger = TensorBoardLogger(save_dir=exp_dir,
                                name="",
                                version="",
                                default_hp_metric=False)
+    lr_monitor = LearningRateMonitor(logging_interval='epoch')
 
     # trainer
     trainer = L.Trainer(accelerator='gpu',
@@ -224,12 +232,9 @@ def train_segmentation(args):
                         enable_progress_bar=True,
                         logger=logger,
                         log_every_n_steps=10,
-                        check_val_every_n_epoch=10,
-                        num_sanity_val_steps=0,
+                        # check_val_every_n_epoch=3,
                         callbacks=[checkpoint_callback,
-                                   earlystopping_callback,])
-    # trainer = L.Trainer(fast_dev_run=True)
-    # begin training
+                                   lr_monitor])  # earlystopping_callback,
     print("beginning the training.")
     start = time.time()
     if args.resume:
