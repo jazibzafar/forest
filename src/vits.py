@@ -272,13 +272,26 @@ class VisionTransformer(nn.Module):
                 output.append(self.norm(x))
         return output
 
-    def forward_with_layer_extraction(self, x, extract_layers=()):
+    def forward_with_layer_extraction(self, x, extract_layers=(), permute=True):
         x = self.prepare_tokens(x)
         layers_to_extract = []
         for i, blk in enumerate(self.blocks):
             x = blk(x)
             if i in extract_layers:
-                layers_to_extract += [x.permute(1, 0, 2)]
+                if permute:  # needed for clip seg
+                    layers_to_extract += [x.permute(1, 0, 2)]
+                else:
+                    layers_to_extract += [x]
+        x = self.norm(x)
+        return x, layers_to_extract
+
+    def forward_with_layer_extraction_alt(self, x, extract_layers=()):
+        x = self.prepare_tokens(x)
+        layers_to_extract = []
+        for i, blk in enumerate(self.blocks):
+            x = blk(x)
+            if i in extract_layers:
+                layers_to_extract += [x]
         x = self.norm(x)
         return x, layers_to_extract
 

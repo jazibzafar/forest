@@ -8,7 +8,8 @@ import lightning as L
 from src.checkpoints import load_dino_checkpoint, prepare_vit, prepare_vit2
 from torchmetrics import JaccardIndex
 from src.nnblocks import ClipSegStyleDecoder
-from src.metrics import mIOU
+from src.dpt import DPT
+from src.metrics import MulticlassGDL
 from src.predict_on_array import predict_on_array_cf
 from src.utils import write_dict_to_yaml, event_to_yml
 from lightning.pytorch.loggers import TensorBoardLogger
@@ -17,6 +18,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint, DeviceStatsMonitor, Lea
 from lightning.pytorch.callbacks import Callback
 import os
 import argparse
+from segmentation_models_pytorch.metrics import get_stats, iou_score, f1_score
 from segmentation_models_pytorch.losses import DiceLoss, TverskyLoss, FocalLoss
 from lightning.pytorch.callbacks import ModelSummary
 import logging
@@ -94,11 +96,20 @@ class LitSeg(L.LightningModule):
             self.loss = nn.BCEWithLogitsLoss()
             self.mIoU = JaccardIndex(task="binary")
         elif self.num_classes > 1:
-            # self.loss = FocalLoss(mode='multiclass', alpha=0.25, gamma=2)
-            weights = torch.Tensor([0.01, 0.40, 0.02, 0.01, 0.21,
-                                    0.04, 0.03, 0.01, 0.05, 0.01,
-                                    0.01, 0.01, 0.24])
-            self.loss = nn.CrossEntropyLoss(weight=weights)  # weight=weights
+            # self.loss = DiceLoss('multiclass')
+            # weights = torch.Tensor([0.01, 0.40, 0.02, 0.01, 0.21,
+            #                         0.04, 0.03, 0.01, 0.05, 0.01,
+            #                         0.01, 0.01, 0.24])
+            # weights = torch.Tensor([2.28426183e-05, 5.97622435e-01, 1.85347224e-03, 4.82034080e-06,
+            #                         1.58676296e-01, 5.28583600e-03, 3.00993221e-03, 3.07509639e-05,
+            #                         7.76003082e-03, 2.32588719e-06, 1.86990300e-04, 2.56891294e-04,
+            #                         2.25287377e-01])  # normalized squared inverse frequency
+            weights = torch.Tensor([6.30252073e+01, 1.68620037e+06, 4.83539050e+03, 1.42763918e+01,
+                                    4.27168207e+05, 1.74033138e+04, 8.63658349e+03, 8.88766578e+01,
+                                    1.95418471e+04, 6.82143139e+00, 5.49484521e+02, 8.51203102e+02,
+                                    5.81044183e+05])
+            self.loss = MulticlassGDL(self.num_classes, class_weights=weights)
+            # self.loss = nn.CrossEntropyLoss(weight=weights)  # weight=weights
         else:
             raise Exception("num_classes should be >0.")
         # other things
@@ -126,7 +137,8 @@ class LitSeg(L.LightningModule):
                         {'params': not_regularized, }]   # 'weight_decay': 0. weight decay is 0 because of the scheduler
         opt = torch.optim.AdamW(param_groups, self.lr, weight_decay=args.weight_decay)
         lr_sched = ExponentialLR(opt, 0.8)
-        return [opt], [lr_sched]
+        # return [opt], [lr_sched]
+        return opt
 
     def train_dataloader(self):
         return DataLoader(self.train_dataset,
@@ -154,7 +166,10 @@ class LitSeg(L.LightningModule):
         loss = self.loss(output, targets)
         self.log('train/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
         output_mask = self.multichannel_output_to_mask(output)
-        iou = mIOU(output_mask, targets, num_classes=args.num_classes)
+        tp, fp, fn, tn = get_stats(output_mask, targets,
+                                   mode='multiclass', num_classes=args.num_classes)
+        iou = iou_score(tp=tp, fp=fp, fn=fn, tn=tn,
+                        reduction='micro-imagewise')
         self.log('train/mIoU', iou, prog_bar=True, on_step=False, on_epoch=True)
         return loss
 
@@ -165,7 +180,12 @@ class LitSeg(L.LightningModule):
 
         loss = self.loss(output, targets)
         output_mask = self.multichannel_output_to_mask(output)
-        iou = mIOU(output_mask, targets, num_classes=args.num_classes)
+        # iou = mIOU(output_mask, targets, num_classes=args.num_classes)
+        tp, fp, fn, tn = get_stats(output_mask, targets,
+                                   mode='multiclass', num_classes=args.num_classes)
+        iou = iou_score(tp=tp, fp=fp, fn=fn, tn=tn,
+                               reduction='micro-imagewise')
+
         self.log('val/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
         self.log('val/mIoU', iou, prog_bar=True, on_step=False, on_epoch=True)
 
@@ -194,14 +214,17 @@ def train_segmentation(args):
     # create the model
     checkpoint = load_dino_checkpoint(args.checkpoint_path, args.checkpoint_key)
     model_backbone = prepare_vit2(args.arch, checkpoint, args.patch_size, num_chans=args.in_chans)
-    model = ClipSegStyleDecoder(backbone=model_backbone,
-                                patch_size=args.patch_size,
-                                reduce_dim=args.reduce_dim,
-                                n_heads=args.decoder_head_count,
-                                simple_decoder=args.simple_decoder,
-                                freeze_backbone=args.freeze_backbone,
-                                num_classes=args.num_classes)
-
+    # model = ClipSegStyleDecoder(backbone=model_backbone,
+    #                             patch_size=args.patch_size,
+    #                             reduce_dim=args.reduce_dim,
+    #                             n_heads=args.decoder_head_count,
+    #                             simple_decoder=args.simple_decoder,
+    #                             freeze_backbone=args.freeze_backbone,
+    #                             num_classes=args.num_classes)
+    model = DPT(backbone=model_backbone,
+                num_classes=args.num_classes,
+                input_size=args.input_size,
+                freeze_backbone=args.freeze_backbone)
     # build the dataset
     train_path = os.path.join(args.data_path, 'train')
     train_dataset = Fortress(train_path, crop_size=args.input_size)
@@ -232,7 +255,7 @@ def train_segmentation(args):
                         enable_progress_bar=True,
                         logger=logger,
                         log_every_n_steps=10,
-                        # check_val_every_n_epoch=3,
+                        # check_val_every_n_epoch=10,
                         callbacks=[checkpoint_callback,
                                    lr_monitor])  # earlystopping_callback,
     print("beginning the training.")

@@ -76,3 +76,36 @@ def mIOU(label, pred, num_classes=19):
             present_iou_list.append(iou_now)
         iou_list.append(iou_now)
     return np.mean(present_iou_list)
+
+
+class MulticlassGDL(nn.Module):
+    def __init__(self, num_classes, class_weights, epsilon=1e-5, mean_reduction=True):
+        super().__init__()
+        self.epsilon = epsilon
+        self.reduction = mean_reduction
+        self.soft_max = nn.Softmax(dim=1)
+        self.num_classes = num_classes
+        self.weights = class_weights
+
+    def forward(self, pred, target):
+        # convert target to one-hot
+        target = torch.nn.functional.one_hot(target.long(), self.num_classes).permute((0, 3, 1, 2)).cuda()
+        assert pred.shape == target.shape, f"shape mismatch. pred: {pred.shape}  target: {target.shape}"
+        # soft max to get probs from logits
+        pred = self.soft_max(pred)
+        # flatten the data
+        pred = torch.flatten(pred, start_dim=2, end_dim=-1)
+        target = torch.flatten(target, start_dim=2, end_dim=-1)
+        # pre-weighted numerator and denominator
+        num = pred * target
+        den = pred + target
+        # weighted numerator and denominator
+        # weights = 1. / (torch.sum(target, dim=2) ** 2).clamp(min=self.epsilon)
+        w_num = self.weights.cuda() * num.sum(dim=2).cuda()
+        w_den = self.weights.cuda() * den.sum(dim=2).cuda()
+        # dice metric
+        dice = 2. * w_num.sum(dim=1) / w_den.sum(dim=1)
+        if self.reduction:
+            return torch.mean(1. - dice.clamp(min=self.epsilon))
+        else:
+            return 1. - dice.clamp(min=self.epsilon)

@@ -217,12 +217,12 @@ class Fortress(Dataset):
                 A.Resize(height=crop_size,
                          width=crop_size,
                          always_apply=True),
-                # A.RandomCrop(height=crop_size,
-                #              width=crop_size,
-                #              always_apply=True),
-                A.CLAHE(p=0.2),
-                A.ColorJitter(p=0.2),
-                A.Downscale(p=0.1),
+                # A.CLAHE(p=0.2),
+                # A.ColorJitter(p=0.2),
+                # A.Downscale(p=0.1),
+                A.RandomBrightnessContrast(brightness_limit=(-0.2, 0.4),
+                                           contrast_limit=(-0.2,0.4),
+                                           p=0.2),
                 A.HorizontalFlip(p=0.3),  # 0.5
                 A.RandomRotate90(p=0.1),  # 0.2
             ])
@@ -230,9 +230,6 @@ class Fortress(Dataset):
             self.default_augment = A.Compose([A.Resize(height=crop_size,
                                                       width=crop_size,
                                                       always_apply=True),
-                                              # A.RandomCrop(height=crop_size,
-                                              #              width=crop_size,
-                                              #              always_apply=True),
                                               ])
 
     def __len__(self):
