@@ -168,9 +168,7 @@ class SegDataset(Dataset):
                              always_apply=True),
                 A.HorizontalFlip(p=0.3),  # 0.5
                 A.RandomRotate90(p=0.1),  # 0.2
-            ])  # these augments need to applied to both tile and mask
-            # for any other augments, apply separate augments for tiles.
-            # masks do not need additional augments.
+            ])
         else:
             # for testing/validation
             self.default_augment = A.CenterCrop(height=crop_size,
@@ -187,19 +185,24 @@ class SegDataset(Dataset):
         mask_path = os.path.join(self.mask_path, mask_name)
         tile = imread(tile_path)
         mask = imread(mask_path)
-        # stack tile and mask together for crops and flips
-        stacked = np.dstack((tile, mask))
-        # default augments
-        # no need to verify if the img is np array or not.
-        t_stacked = self.default_augment(image=stacked)['image']
-        # split the stacked img back into tile and mask
-        t_tile = t_stacked[:, :, 0:4]
-        t_mask = t_stacked[:, :, 4]
-        # # convert tile and mask to torch.Tensor
-        # t_tile = torch.Tensor(t_tile)
-        t_tile = ToTensor()(t_tile.astype('uint8'))
-        t_mask = torch.Tensor(t_mask)
+
+        augmented = self.default_augment(image=tile, mask=mask)
+        t_tile = ToTensor()(augmented['image'].astype('uint8'))
+        t_mask = torch.Tensor(augmented['mask'])
         return t_tile, t_mask
+        # # stack tile and mask together for crops and flips
+        # stacked = np.dstack((tile, mask))
+        # # default augments
+        # # no need to verify if the img is np array or not.
+        # t_stacked = self.default_augment(image=stacked)['image']
+        # # split the stacked img back into tile and mask
+        # t_tile = t_stacked[:, :, 0:4]
+        # t_mask = t_stacked[:, :, 4]
+        # # # convert tile and mask to torch.Tensor
+        # # t_tile = torch.Tensor(t_tile)
+        # t_tile = ToTensor()(t_tile.astype('uint8'))
+        # t_mask = torch.Tensor(t_mask)
+
 
 
 class Fortress(Dataset):
@@ -295,6 +298,54 @@ class SegDataMemBuffer(Dataset):
         tile = ToTensor()(tile)
         mask = torch.Tensor(mask)  # to prevent normalizing
         return tile, mask
+
+
+class OAM_TCD(Dataset):
+    def __init__(self, path, crop_size, mode):
+        super().__init__()
+        self.path = path
+        match mode:
+            case 'train':
+                train_file = os.path.join(path, "train.txt")
+                with open(train_file) as f:
+                    self.data_list = f.read().splitlines()
+                #
+                self.default_augment = A.Compose([
+                    A.RandomCrop(height=crop_size,
+                                 width=crop_size,),
+                    A.HorizontalFlip(p=0.3),  # 0.5
+                    A.RandomRotate90(p=0.1),  # 0.2
+                ])
+            case 'val':
+                val_file = os.path.join(path, "val.txt")
+                with open(val_file) as f:
+                    self.data_list = f.read().splitlines()
+                self.default_augment = A.CenterCrop(height=crop_size,
+                                                    width=crop_size,)
+            case 'test':
+                test_file = os.path.join(path, "test.txt")
+                with open(test_file) as f:
+                    self.data_list = f.read().splitlines()
+                self.default_augment = A.CenterCrop(height=crop_size,
+                                                    width=crop_size,)
+            case _:
+                print("incorrect mode. Use train, val or test")
+        self.tile_path = os.path.join(path, "tiles")
+        self.mask_path = os.path.join(path, "masks")
+
+    def __len__(self):
+        return len(self.data_list)
+
+    def __getitem__(self, item):
+        item_name = self.data_list[item]
+        p_tile = os.path.join(self.tile_path, f"tile_{item_name}.tif")
+        p_mask = os.path.join(self.mask_path, f"mask_{item_name}.tif")
+        tile = imread(p_tile)
+        mask = imread(p_mask)
+        augmented = self.default_augment(image=tile.astype('uint8'), mask=mask.astype('uint8'))
+        t_tile = ToTensor()(augmented['image'].astype('uint8'))
+        t_mask = torch.Tensor(augmented['mask'])
+        return t_tile, t_mask
 
 
 class GeoWebDataset(IterableDataset):
