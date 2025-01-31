@@ -255,7 +255,7 @@ def train_segmentation(args):
                         enable_progress_bar=True,
                         logger=logger,
                         log_every_n_steps=10,
-                        # check_val_every_n_epoch=10,
+                        check_val_every_n_epoch=5,
                         callbacks=[checkpoint_callback,
                                    lr_monitor])  # earlystopping_callback,
     print("beginning the training.")

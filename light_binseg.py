@@ -1,4 +1,4 @@
-from torch.optim.lr_scheduler import ExponentialLR
+from torch.optim.lr_scheduler import ExponentialLR, CosineAnnealingLR, CosineAnnealingWarmRestarts
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from src.data_and_transforms import SegDataset, SegDataMemBuffer, Fortress, OAM_TCD
 import torch.nn as nn
@@ -111,8 +111,10 @@ class LitSeg(L.LightningModule):
                         {'params': not_regularized, }]   # 'weight_decay': 0. weight decay is 0 because of the scheduler
         opt = torch.optim.AdamW(param_groups, self.lr, weight_decay=args.weight_decay)
         # lr_sched = ExponentialLR(opt, 0.8)
-        # return [opt], [lr_sched]
-        return opt
+        # lr_sched = CosineAnnealingLR(opt, T_max=int(self.args.max_epochs/10))
+        lr_sched = CosineAnnealingWarmRestarts(opt, T_0=20, T_mult=4)
+        return [opt], [lr_sched]
+        # return opt
 
     def train_dataloader(self):
         return DataLoader(self.train_dataset,
@@ -205,7 +207,7 @@ def train_segmentation(args):
                                           # every_n_train_steps=int(args.max_steps / 5),
                                           enable_version_counter=False,
                                           save_last=True)
-    earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=5)
+    earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=3)
     logger = TensorBoardLogger(save_dir=exp_dir,
                                name="",
                                version="",
@@ -219,9 +221,10 @@ def train_segmentation(args):
                         enable_progress_bar=True,
                         logger=logger,
                         log_every_n_steps=10,
-                        # check_val_every_n_epoch=10,
+                        check_val_every_n_epoch=5,
                         callbacks=[checkpoint_callback,
-                                   lr_monitor])  # earlystopping_callback,
+                                   lr_monitor,
+                                  ])  # earlystopping_callback,
     print("beginning the training.")
     start = time.time()
     if args.resume:
