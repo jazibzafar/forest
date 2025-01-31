@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from lightning.pytorch.loggers import TensorBoardLogger
 import segmentation_models_pytorch as smp
 import os
-from src.data_and_transforms import SegDataset, SegDataMemBuffer, Fortress
+from src.data_and_transforms import SegDataset, SegDataMemBuffer, Fortress, OAM_TCD
 from torchmetrics import JaccardIndex
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from torch.optim import AdamW
@@ -15,7 +15,7 @@ import time
 from src.checkpoints import load_dino_checkpoint, prepare_resnet, prepare_resnet2
 import argparse
 
-from src.metrics import FocalLoss
+# from src.metrics import FocalLoss
 from src.utils import write_dict_to_yaml
 from src.predict_on_array import predict_on_array_cf
 
@@ -53,10 +53,6 @@ class LitUnet(L.LightningModule):
         if self.num_classes == 1:
             self.loss = nn.BCEWithLogitsLoss()
             self.mIoU = JaccardIndex(task="binary")
-        elif self.num_classes > 1:
-            # self.loss = nn.CrossEntropyLoss()
-            self.loss = FocalLoss(gamma=2)
-            self.mIoU = JaccardIndex(task="multiclass", num_classes=self.num_classes)
         else:
             raise Exception("num_classes should be >0.")
         # other things
@@ -87,20 +83,19 @@ class LitUnet(L.LightningModule):
     def training_step(self, batch, batch_idx):
         samples = batch[0]
         targets = batch[1]
-        output = self.model(samples)
+        output = self.model(samples).squeeze()
         # output = output.squeeze(1)
-        breakpoint()
-        loss = self.loss(output, targets.squeeze(3))
+        loss = self.loss(output, targets)
         self.log('train/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         samples = batch[0]
         targets = batch[1]
-        output = self.model(samples)
+        output = self.model(samples).squeeze()
         # output = output.squeeze(1)
-        loss = self.loss(output, targets.squeeze(3))
-        iou = self.mIoU(output, targets.squeeze(3))
+        loss = self.loss(output, targets)
+        iou = self.mIoU(output, targets)
         self.log('val/loss', loss, prog_bar=True, on_step=False, on_epoch=True)
         self.log('val/mIoU', iou, prog_bar=True, on_step=False, on_epoch=True)
 
@@ -142,17 +137,17 @@ def train_unet(args):
     model.encoder.load_state_dict(backbone.state_dict())
     # build the dataset
     train_path = os.path.join(args.data_path, 'train/')
-    train_dataset = Fortress(train_path, args.crop_size, )
+    train_dataset = OAM_TCD(args.data_path, args.crop_size, mode='train')
     val_path = os.path.join(args.data_path, 'val/')
-    val_dataset = Fortress(val_path, args.crop_size, )
+    val_dataset = OAM_TCD(args.data_path, args.crop_size, mode='val')
 
     unet_model = LitUnet(model, train_dataset, val_dataset, args)
 
     checkpoint_callback = ModelCheckpoint(dirpath=args.output_dir,
                                           every_n_epochs=int(args.max_epochs / 3),
-                                          # every_n_train_steps=int(args.max_steps / 5),
+                                          # every_n_train_steps=int(args.max_steps / 10),
                                           save_last=True)
-    earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=5)
+    earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=3)
     logger = TensorBoardLogger(save_dir=args.output_dir,
                                name="",
                                default_hp_metric=False)
@@ -164,7 +159,7 @@ def train_unet(args):
                         enable_progress_bar=True,
                         logger=logger,
                         log_every_n_steps=10,
-                        check_val_every_n_epoch=3,
+                        check_val_every_n_epoch=10,
                         callbacks=[checkpoint_callback, earlystopping_callback])
 
     print("beginning the training.")
