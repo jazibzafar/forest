@@ -112,9 +112,9 @@ class LitSeg(L.LightningModule):
         opt = torch.optim.AdamW(param_groups, self.lr, weight_decay=args.weight_decay)
         # lr_sched = ExponentialLR(opt, 0.8)
         # lr_sched = CosineAnnealingLR(opt, T_max=int(self.args.max_epochs/10))
-        lr_sched = CosineAnnealingWarmRestarts(opt, T_0=20, T_mult=4)
-        return [opt], [lr_sched]
-        # return opt
+        # lr_sched = CosineAnnealingWarmRestarts(opt, T_0=20, T_mult=4)
+        # return [opt], [lr_sched]
+        return opt
 
     def train_dataloader(self):
         return DataLoader(self.train_dataset,
@@ -180,22 +180,22 @@ def train_segmentation(args):
     # create the model
     checkpoint = load_dino_checkpoint(args.checkpoint_path, args.checkpoint_key)
     model_backbone = prepare_vit2(args.arch, checkpoint, args.patch_size, num_chans=args.in_chans)
-    # model = ClipSegStyleDecoder(backbone=model_backbone,
-    #                             patch_size=args.patch_size,
-    #                             reduce_dim=args.reduce_dim,
-    #                             n_heads=args.decoder_head_count,
-    #                             simple_decoder=args.simple_decoder,
-    #                             freeze_backbone=args.freeze_backbone,
-    #                             num_classes=args.num_classes)
-    model = DPT(backbone=model_backbone,
-                num_classes=args.num_classes,
-                input_size=args.input_size,
-                freeze_backbone=args.freeze_backbone)
+    model = ClipSegStyleDecoder(backbone=model_backbone,
+                                patch_size=args.patch_size,
+                                reduce_dim=args.reduce_dim,
+                                n_heads=args.decoder_head_count,
+                                simple_decoder=args.simple_decoder,
+                                freeze_backbone=args.freeze_backbone,
+                                num_classes=args.num_classes)
+    # model = DPT(backbone=model_backbone,
+    #             num_classes=args.num_classes,
+    #             input_size=args.input_size,
+    #             freeze_backbone=args.freeze_backbone)
     # build the dataset
     train_path = os.path.join(args.data_path, 'train')
-    train_dataset = OAM_TCD(args.data_path, args.input_size, mode='train')
+    train_dataset = SegDataset(train_path, args.input_size, train=True)
     val_path = os.path.join(args.data_path, 'val')
-    val_dataset = OAM_TCD(args.data_path, args.input_size, mode='val')
+    val_dataset = SegDataset(val_path, args.input_size, train=False)
 
     # experiment directory
     exp_dir = os.path.join(args.output_dir, args.exp_name)
@@ -224,7 +224,7 @@ def train_segmentation(args):
                         check_val_every_n_epoch=5,
                         callbacks=[checkpoint_callback,
                                    lr_monitor,
-                                  ])  # earlystopping_callback,
+                                   earlystopping_callback])  # earlystopping_callback,
     print("beginning the training.")
     start = time.time()
     if args.resume:
