@@ -27,7 +27,7 @@ def get_args_parser_unet():
     parser.add_argument('--checkpoint_key', default='teacher', type=str)
     parser.add_argument('--data_path', default='/path/to/data/', type=str)
     parser.add_argument('--crop_size', default=224, type=int)
-    parser.add_argument('--num_chans', default=3, type=int)
+    parser.add_argument('--num_chans', default=4, type=int)
     parser.add_argument('--num_classes', default=1, type=int)
     parser.add_argument('--lr', default=1e-3, type=float)
     parser.add_argument('--batch_size', default=32, type=int)
@@ -137,9 +137,9 @@ def train_unet(args):
     model.encoder.load_state_dict(backbone.state_dict())
     # build the dataset
     train_path = os.path.join(args.data_path, 'train/')
-    train_dataset = OAM_TCD(args.data_path, args.crop_size, mode='train')
+    train_dataset = SegDataset(train_path, args.crop_size, train=True)
     val_path = os.path.join(args.data_path, 'val/')
-    val_dataset = OAM_TCD(args.data_path, args.crop_size, mode='val')
+    val_dataset = SegDataset(val_path, args.crop_size, train=False)
 
     unet_model = LitUnet(model, train_dataset, val_dataset, args)
 

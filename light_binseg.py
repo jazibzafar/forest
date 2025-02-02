@@ -179,7 +179,7 @@ class LitSeg(L.LightningModule):
 def train_segmentation(args):
     # create the model
     checkpoint = load_dino_checkpoint(args.checkpoint_path, args.checkpoint_key)
-    model_backbone = prepare_vit2(args.arch, checkpoint, args.patch_size, num_chans=args.in_chans)
+    model_backbone = prepare_vit(args.arch, checkpoint, args.patch_size, num_chans=args.in_chans)
     model = ClipSegStyleDecoder(backbone=model_backbone,
                                 patch_size=args.patch_size,
                                 reduce_dim=args.reduce_dim,
@@ -221,7 +221,7 @@ def train_segmentation(args):
                         enable_progress_bar=True,
                         logger=logger,
                         log_every_n_steps=10,
-                        check_val_every_n_epoch=5,
+                        check_val_every_n_epoch=10,
                         callbacks=[checkpoint_callback,
                                    lr_monitor,
                                    earlystopping_callback])  # earlystopping_callback,
