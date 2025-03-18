@@ -93,32 +93,26 @@ def prepare_vit2(arch, pretrained_model, patch_size, num_chans=4):
     return model
 
 
-def prepare_resnet(arch, pretrained_model, num_chans=4):
+def prepare_resnet_model(pretrained_model, num_data_chans):
+    pt_in_chans = pretrained_model['conv1.weight'].shape[1]
     model = resnet50()
-
-    # adapt the first conv layer to num_chans
-    if model.conv1.in_channels != num_chans:
-        weight = model.conv1.weight.clone()
-        model.conv1 =torch.nn.Conv2d(num_chans, 64, kernel_size=(7,7), stride=(2,2), padding=(3,3), bias=False)
-        with torch.no_grad():
-            model.conv1.weight[:, :num_chans-1] = weight
-            model.conv1.weight[:, num_chans-1] = model.conv1.weight[:,0]
+    # step 1: replace the conv1 to have the same number of channels as the pt model, so we can load the state dict.
+    model.conv1 = torch.nn.Conv2d(pt_in_chans, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
     msg = model.load_state_dict(pretrained_model, strict=False)
     print(msg)
-    return model
-
-
-def prepare_resnet2(arch, pretrained_model, num_chans=4):
-    model = resnet50()
-    msg = model.load_state_dict(pretrained_model, strict=False)
-    print(msg)
-    # adapt the first conv layer to num_chans
-    if model.conv1.in_channels != num_chans:
-        weight = model.conv1.weight.clone()
-        model.conv1 =torch.nn.Conv2d(num_chans, 64, kernel_size=(7,7), stride=(2,2), padding=(3,3), bias=False)
-        with torch.no_grad():
-            model.conv1.weight[:, :2] = weight[:, :2]
-
+    # step 2: edit the conv1 weights, shape to adapt to the data channels.
+    if not pt_in_chans == num_data_chans:
+        if pt_in_chans > num_data_chans:  # 43
+            weight = model.conv1.weight.clone()
+            model.conv1 = torch.nn.Conv2d(num_data_chans, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+            with torch.no_grad():
+                model.conv1.weight[:, :2] = weight[:, :2]
+        else:  # pt_in_chans < num_data_chans # 34
+            weight = model.conv1.weight.clone()
+            model.conv1 = torch.nn.Conv2d(num_data_chans, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+            with torch.no_grad():
+                model.conv1.weight[:, :num_data_chans - 1] = weight
+                model.conv1.weight[:, num_data_chans - 1] = model.conv1.weight[:, 0]
     return model
 
 
