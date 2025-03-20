@@ -14,7 +14,7 @@ import src.vits as vits
 from src.vits import DINOHead
 from src.utils import bool_flag
 from src.nnblocks import MultiCropWrapper
-from src.data_and_transforms import DINOTransform, GeoWebDataset
+from src.data_and_transforms import DINOTransform, GeoWebDataset, randomly_remove_chan4
 from torchvision.models import resnet50
 
 # TODO: add support for torch compile
@@ -43,6 +43,9 @@ def get_args_parser():
                         help="""Whether or not to weight normalize the last layer of the DINO head.
         Not normalizing leads to better performance but can make the training unstable.
         In our experiments, we typically set this paramater to False with vit_small and True with vit_base.""")
+    parser.add_argument('--multimodal', default=True, type=bool_flag,
+                        help="""Dataloader drops channel 4 randomly for half of the batches (prob). Different patch 
+                        embeddings for 3 or 4 channel images. Only for ViTs (for now).""")
     parser.add_argument('--momentum_teacher', default=0.996, type=float, help="""Base EMA
         parameter for teacher update. The value is increased to 1 during training with cosine schedule.
         We recommend setting a higher value with small batches: for example use 0.9995 with batch size of 256.""")
@@ -203,8 +206,9 @@ class LitDINO(L.LightningModule):
             model = vits.__dict__[args.arch]
             student_backbone = model(patch_size=args.patch_size,
                                      drop_path_rate=args.drop_path_rate,
-                                     in_chans=args.in_chans)
-            teacher_backbone = model(patch_size=args.patch_size, in_chans=args.in_chans)
+                                     in_chans=args.in_chans,
+                                     multimodal=args.multimodal)
+            teacher_backbone = model(patch_size=args.patch_size, in_chans=args.in_chans, multimodal=args.multimodal)
             student_in_dim_dinohead = student_backbone.embed_dim
             teacher_in_dim_dinohead = teacher_backbone.embed_dim
         elif args.arch == "resnet50":
@@ -274,11 +278,19 @@ class LitDINO(L.LightningModule):
         return opt
 
     def train_dataloader(self):
-        loader = DataLoader(self.dataset,
-                                 num_workers=args.num_workers,
-                                 batch_size=args.batch_size_per_gpu,
-                                 pin_memory=True,
-                                 drop_last=True, )
+        if not args.multimodal:
+            loader = DataLoader(self.dataset,
+                                     num_workers=args.num_workers,
+                                     batch_size=args.batch_size_per_gpu,
+                                     pin_memory=True,
+                                     drop_last=True, )
+        else:
+            loader = DataLoader(self.dataset,
+                                num_workers=args.num_workers,
+                                batch_size=args.batch_size_per_gpu,
+                                pin_memory=True,
+                                drop_last=True,
+                                collate_fn=randomly_remove_chan4)
 
         self.lr_sch = cosine_scheduler_step_based(self.lr, 1e-6, args.warmup_steps, args.max_steps)
         self.wd_sch = cosine_scheduler_step_based(args.weight_decay_init, args.weight_decay_end, 0, args.max_steps)
