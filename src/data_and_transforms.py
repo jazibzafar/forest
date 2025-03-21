@@ -41,16 +41,19 @@ def get_crop_indices(length, window, overlap):
 
 
 def randomly_remove_chan4(batch):
-    li = []
-    p = 0.5
+    if np.random.uniform() < 0.5:
+        return torch.stack([item[:3] for item in batch], dim=0)
+    return torch.stack(batch, dim=0)
+
+
+def randomly_remove_chan4_dino(batch):
     r = np.random.uniform()
-    if r < p:
-        for item in batch:
-            li.append(item[0:3])
-    else:
-        return torch.stack(batch, dim=0)
-    data = torch.stack(li, dim=0)
-    return data
+    batch_transpose = list(map(list, zip(*batch)))
+    li = [
+        torch.stack([item[:3] for item in lst], dim=0) if r < 0.5 else torch.stack(lst, dim=0)
+        for lst in batch_transpose
+    ]
+    return li
 
 
 def create_crops(img, crop_size, overlap):
