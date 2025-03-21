@@ -246,9 +246,9 @@ class VisionTransformer(nn.Module):
             x = self.patch_embed(x)  # patch linear embedding
         else:
             if nc == 3:
-                self.patch_embed_3(x)
+                x = self.patch_embed_3(x)
             elif nc == 4:
-                self.patch_embed_4(x)
+                x = self.patch_embed_4(x)
 
         # add the [CLS] token to the embed patch tokens
         cls_tokens = self.cls_token.expand(B, -1, -1)
