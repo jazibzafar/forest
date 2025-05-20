@@ -12,15 +12,6 @@ def load_dino_checkpoint(checkpoint_path, checkpoint_key):
         pretrained_model = checkpoint[checkpoint_key]
     except KeyError:
         pretrained_model = checkpoint
-    # pretrained_model = model_remove_prefix(pretrained_model, 'backbone.')
-    # checkpoint = checkpoint['state_dict']
-    # pretrained_model = OrderedDict()
-    # for k, v in checkpoint.items():
-    #     if k.startswith(checkpoint_key):
-    #         pretrained_model[k] = v
-    #
-    # pretrained_model = {k.replace(f"{checkpoint_key}.", ""): v for k, v in pretrained_model.items()}
-    # pretrained_model = {k.replace("backbone.", ""): v for k, v in pretrained_model.items()}
     return pretrained_model
 
 
@@ -137,7 +128,7 @@ def model_remove_prefix(in_state_dict, prefix_to_remove):
         return
     out_state_dict = {}
     for src_key, dest_key in pairings:
-        print(f"{src_key}  ==>  {dest_key}")
+        # print(f"{src_key}  ==>  {dest_key}")
         out_state_dict[dest_key] = in_state_dict[src_key]
     return OrderedDict(out_state_dict)
 
@@ -151,6 +142,6 @@ def model_replace_prefix(in_state_dict, prefix_add, prefix_rem):
         return
     out_state_dict = {}
     for src_key, dest_key in pairings:
-        print(f"{src_key}  ==>  {dest_key}")
+        # print(f"{src_key}  ==>  {dest_key}")
         out_state_dict[dest_key] = in_state_dict[src_key]
     return OrderedDict(out_state_dict)

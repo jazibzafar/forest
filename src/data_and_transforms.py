@@ -322,7 +322,7 @@ class OAM_TCD(Dataset):
         self.path = path
         match mode:
             case 'train':
-                train_file = os.path.join(path, 'train.txt')
+                train_file = os.path.join(path, 'train_4k.txt')
                 with open(train_file) as f:
                     self.data_list = f.read().splitlines()
                 #
@@ -333,7 +333,7 @@ class OAM_TCD(Dataset):
                     A.RandomRotate90(p=0.1),  # 0.2
                 ])
             case 'val':
-                val_file = os.path.join(path, 'val.txt')
+                val_file = os.path.join(path, 'val_4k.txt')
                 with open(val_file) as f:
                     self.data_list = f.read().splitlines()
                 self.default_augment = A.CenterCrop(height=crop_size,

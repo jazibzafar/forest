@@ -179,23 +179,23 @@ class LitSeg(L.LightningModule):
 def train_segmentation(args):
     # create the model
     checkpoint = load_dino_checkpoint(args.checkpoint_path, args.checkpoint_key)
-    model_backbone = prepare_vit(args.arch, checkpoint, args.patch_size, num_chans=args.in_chans)
-    model = ClipSegStyleDecoder(backbone=model_backbone,
-                                patch_size=args.patch_size,
-                                reduce_dim=args.reduce_dim,
-                                n_heads=args.decoder_head_count,
-                                simple_decoder=args.simple_decoder,
-                                freeze_backbone=args.freeze_backbone,
-                                num_classes=args.num_classes)
-    # model = DPT(backbone=model_backbone,
-    #             num_classes=args.num_classes,
-    #             input_size=args.input_size,
-    #             freeze_backbone=args.freeze_backbone)
+    model_backbone = prepare_vit2(args.arch, checkpoint, args.patch_size, num_chans=args.in_chans)
+    # model = ClipSegStyleDecoder(backbone=model_backbone,
+    #                             patch_size=args.patch_size,
+    #                             reduce_dim=args.reduce_dim,
+    #                             n_heads=args.decoder_head_count,
+    #                             simple_decoder=args.simple_decoder,
+    #                             freeze_backbone=args.freeze_backbone,
+    #                             num_classes=args.num_classes)
+    model = DPT(backbone=model_backbone,
+                num_classes=args.num_classes,
+                input_size=args.input_size,
+                freeze_backbone=args.freeze_backbone)
     # build the dataset
     train_path = os.path.join(args.data_path, 'train')
-    train_dataset = SegDataset(train_path, args.input_size, train=True)
+    train_dataset = OAM_TCD(args.data_path, args.input_size, mode='train')
     val_path = os.path.join(args.data_path, 'val')
-    val_dataset = SegDataset(val_path, args.input_size, train=False)
+    val_dataset = OAM_TCD(args.data_path, args.input_size, mode='val')
 
     # experiment directory
     exp_dir = os.path.join(args.output_dir, args.exp_name)
@@ -207,7 +207,7 @@ def train_segmentation(args):
                                           # every_n_train_steps=int(args.max_steps / 5),
                                           enable_version_counter=False,
                                           save_last=True)
-    earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=3)
+    # earlystopping_callback = EarlyStopping(monitor='val/loss', mode='min', patience=10)
     logger = TensorBoardLogger(save_dir=exp_dir,
                                name="",
                                version="",
@@ -221,10 +221,10 @@ def train_segmentation(args):
                         enable_progress_bar=True,
                         logger=logger,
                         log_every_n_steps=10,
-                        check_val_every_n_epoch=10,
+                        # check_val_every_n_epoch=10,
                         callbacks=[checkpoint_callback,
                                    lr_monitor,
-                                   earlystopping_callback])  # earlystopping_callback,
+                                   ])  # earlystopping_callback,
     print("beginning the training.")
     start = time.time()
     if args.resume:

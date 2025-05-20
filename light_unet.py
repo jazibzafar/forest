@@ -29,7 +29,7 @@ def get_args_parser_unet():
     parser.add_argument('--crop_size', default=224, type=int)
     parser.add_argument('--num_chans', default=4, type=int)
     parser.add_argument('--num_classes', default=1, type=int)
-    parser.add_argument('--lr', default=1e-3, type=float)
+    parser.add_argument('--lr', default=1e-5, type=float)
     parser.add_argument('--batch_size', default=32, type=int)
     parser.add_argument('--num_workers', default=8, type=int)
     parser.add_argument('--output_dir', default='/path/to/data/', type=str)
@@ -160,7 +160,7 @@ def train_unet(args):
                         logger=logger,
                         log_every_n_steps=10,
                         check_val_every_n_epoch=10,
-                        callbacks=[checkpoint_callback, earlystopping_callback])
+                        callbacks=[checkpoint_callback, earlystopping_callback])  # earlystopping_callback
 
     print("beginning the training.")
     start = time.time()

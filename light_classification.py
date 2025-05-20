@@ -13,12 +13,15 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.callbacks.device_stats_monitor import DeviceStatsMonitor
 from lightning.pytorch.loggers import TensorBoardLogger
-from src.checkpoints import load_dino_checkpoint, prepare_vit, prepare_resnet
+from src.checkpoints import load_dino_checkpoint, prepare_vit, prepare_resnet_model
 from src.data_and_transforms import img_loader
 import argparse
 from src.utils import event_to_yml
 from lightning.pytorch.callbacks import Callback
 from lightning.pytorch.callbacks import ModelSummary
+
+
+torch.manual_seed(222)
 
 
 def get_args_parser_class():
@@ -156,7 +159,7 @@ def train_classification(args):
         model_backbone = prepare_vit(args.arch, checkpoint, args.patch_size, args.num_chans)
         linear_classifier = LinearClassifier(model_backbone.embed_dim, args.num_classes)
     elif args.arch.startswith("res"):
-        model_backbone = prepare_resnet(args.arch, checkpoint, args.num_chans)
+        model_backbone = prepare_resnet_model(args.arch, checkpoint, args.num_chans)
         linear_classifier = LinearClassifier(model_backbone.fc.out_features, args.num_classes)
     else:
         raise Exception("Please select a valid model.")
