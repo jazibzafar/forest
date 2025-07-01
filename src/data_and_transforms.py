@@ -96,12 +96,19 @@ class UsualTransform:
 
 
 class DINOTransform:
-    def __init__(self, global_crop_size, global_crops_scale, local_crop_size, local_crops_scale, local_crops_number):
+    def __init__(self,
+                 global_crop_size,
+                 global_crops_scale,
+                 local_crop_size,
+                 local_crops_scale,
+                 local_crops_number,
+                 in_chans):
         self.global_crop_size = global_crop_size
         self.global_crops_scale = global_crops_scale
         self.local_crop_size = local_crop_size
         self.local_crops_scale = local_crops_scale
         self.local_crops_number = local_crops_number
+        self.in_chans = in_chans
 
         img_augmentations = A.Compose([
             A.HorizontalFlip(p=0.1),  # 0.5
@@ -117,8 +124,7 @@ class DINOTransform:
         # Scale is used atm.
         self.global_transform_1 = A.Compose([
             A.RandomCrop(height=self.global_crop_size,
-                         width=self.global_crop_size,
-                         always_apply=True),
+                         width=self.global_crop_size),
             img_augmentations,
         ])
 
@@ -127,16 +133,14 @@ class DINOTransform:
         # Solarization is not used atm.
         self.global_transform_2 = A.Compose([
             A.RandomCrop(height=self.global_crop_size,
-                         width=self.global_crop_size,
-                         always_apply=True),
+                         width=self.global_crop_size),
                                 #  interpolation=cv2.INTER_CUBIC),
             img_augmentations,
         ])
 
         self.local_transform = A.Compose([
             A.RandomCrop(height=self.local_crop_size,
-                         width=self.local_crop_size,
-                         always_apply=True),
+                         width=self.local_crop_size),
                                 #  interpolation=cv2.INTER_CUBIC),
             img_augmentations,
         ])
@@ -145,7 +149,9 @@ class DINOTransform:
         # Make sure image is a np array
         if type(image) == 'torch.Tensor':
             image = image.numpy()
-        print(image.shape)
+        if self.in_chans < image.shape[-1]:
+            image = image[:, :, 0:self.in_chans]
+
         crops = [self.global_transform_1(image=image)['image'], self.global_transform_2(image=image)['image']]
         for _ in range(self.local_crops_number):
             crops.append(self.local_transform(image=image)['image'])
@@ -368,13 +374,11 @@ class GeoWebDataset(IterableDataset):
     def __init__(self,
                  *,
                  root,
-                 n_bands,
                  augmentations,
                  num_nodes=1,
                  num_shards=100,
                  imgs_per_shard=250):
         self.root = root
-        self.n_bands = n_bands
         self.augmentations = augmentations
         self.num_nodes = num_nodes
         self.num_shards = num_shards
