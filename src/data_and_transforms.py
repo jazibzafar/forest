@@ -145,7 +145,7 @@ class DINOTransform:
         # Make sure image is a np array
         if type(image) == 'torch.Tensor':
             image = image.numpy()
-
+        print(image.shape)
         crops = [self.global_transform_1(image=image)['image'], self.global_transform_2(image=image)['image']]
         for _ in range(self.local_crops_number):
             crops.append(self.local_transform(image=image)['image'])
@@ -424,7 +424,8 @@ class GeoWebDataset(IterableDataset):
         for img in samples:
             for y in range(0, img.shape[1], tilesize):
                 for x in range(0, img.shape[2], tilesize):
-                    yield img[:, y:y + tilesize, x:x + tilesize]  # CHW
+                    # yield img[:, y:y + tilesize, x:x + tilesize]  # CHW
+                    yield img[x:x + tilesize, y:y + tilesize, :]  # HWC
 
     @staticmethod
     def split_by_dataloader_worker(iterable):
